@@ -1,0 +1,132 @@
+{% extends 'admin_dashboard/base.html' %}
+
+{% block title %}Employees List | HRMS Dashboard{% endblock %}
+{% block active_employees %}active{% endblock %}
+
+{% block header_content %}
+<h1>Employees</h1>
+<p class="text-muted mb-0">Manage employee accounts, track attendance, and filter user profiles.</p>
+{% endblock %}
+
+{% block content %}
+<!-- Search and Filters -->
+<div class="glass-card mb-4">
+    <form method="GET" class="row g-3 align-items-end">
+        <div class="col-md-4">
+            <label for="search" class="form-label fw-semibold text-secondary">Search by Name</label>
+            <div class="input-group">
+                <span class="input-group-text bg-white border-end-0 text-muted">
+                    <i class="bi bi-search"></i>
+                </span>
+                <input type="text" name="search" id="search" class="form-control border-start-0" placeholder="Search by name, email, username..." value="{{ search_query }}">
+            </div>
+        </div>
+        
+        <div class="col-md-3">
+            <label for="department" class="form-label fw-semibold text-secondary">Filter by Department</label>
+            <select name="department" id="department" class="form-select">
+                <option value="">All Departments</option>
+                {% for dept in departments %}
+                    <option value="{{ dept }}" {% if selected_department == dept %}selected{% endif %}>{{ dept|title }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="col-md-3">
+            <label for="role" class="form-label fw-semibold text-secondary">Filter by Role</label>
+            <select name="role" id="role" class="form-select">
+                <option value="">All Roles</option>
+                <option value="admin" {% if selected_role == 'admin' %}selected{% endif %}>Admin</option>
+                <option value="employee" {% if selected_role == 'employee' %}selected{% endif %}>Employee</option>
+            </select>
+        </div>
+
+        <div class="col-md-2 d-flex gap-2">
+            <button type="submit" class="btn btn-premium w-100">
+                <i class="bi bi-funnel-fill me-1"></i> Apply
+            </button>
+            <a href="{% url 'employee_list' %}" class="btn btn-outline-premium w-100 d-flex align-items-center justify-content-center" title="Reset Filters">
+                <i class="bi bi-arrow-clockwise"></i>
+            </a>
+        </div>
+    </form>
+</div>
+
+<!-- Employee List Table -->
+<div class="glass-card p-0">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Role</th>
+                    <th>Department</th>
+                    <th>Designation</th>
+                    <th>Joining Date</th>
+                    <th>Today's Attendance</th>
+                    <th class="text-end">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if employees %}
+                    {% for emp in employees %}
+                        <tr>
+                            <td>
+                                <div class="d-flex align-items-center gap-3">
+                                    <div class="bg-light border rounded-3 d-flex align-items-center justify-content-center" style="width: 40px; height: 40px;">
+                                        <i class="bi bi-person text-secondary"></i>
+                                    </div>
+                                    <div>
+                                        <div class="fw-semibold">
+                                            <a href="{% url 'employee_detail' emp.id %}" class="text-decoration-none text-dark hover-indigo">
+                                                {{ emp.get_full_name|default:emp.username }}
+                                            </a>
+                                        </div>
+                                        <small class="text-muted">{{ emp.email|default:"No email provided" }}</small>
+                                    </div>
+                                </div>
+                            </td>
+                            <td>
+                                <span class="badge rounded-pill {% if emp.role == 'admin' %}bg-dark-subtle text-dark border{% else %}bg-light text-secondary border{% endif %} px-2.5 py-1">
+                                    {{ emp.role|title }}
+                                </span>
+                            </td>
+                            <td>{{ emp.department|default:"-"|title }}</td>
+                            <td>{{ emp.designation|default:"-"|title }}</td>
+                            <td>{{ emp.joining_date|date:"M d, Y"|default:"-" }}</td>
+                            <td>
+                                <span class="badge badge-{{ emp.today_attendance_status }} rounded-3 px-2.5 py-1.5 fw-semibold" style="font-size: 0.75rem;">
+                                    {% if emp.today_attendance_status == 'no_record' %}
+                                        No Record
+                                    {% else %}
+                                        {{ emp.today_attendance_status|title }}
+                                    {% endif %}
+                                </span>
+                            </td>
+                            <td class="text-end">
+                                <a href="{% url 'employee_detail' emp.id %}" class="btn btn-sm btn-outline-premium py-1 px-2.5" title="View Detail">
+                                    <i class="bi bi-eye-fill"></i> View
+                                </a>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="7" class="text-center py-5 text-muted">
+                            <i class="bi bi-people fs-1 d-block mb-3"></i>
+                            No employees found matching the criteria.
+                        </td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<style>
+    .hover-indigo:hover {
+        color: #4f46e5 !important;
+        text-decoration: underline !important;
+    }
+</style>
+{% endblock %}

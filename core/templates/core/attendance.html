@@ -1,0 +1,130 @@
+{% extends 'admin_dashboard/base.html' %}
+
+{% block title %}Login Time | HRMS Portal{% endblock %}
+{% block active_attendance %}active{% endblock %}
+
+{% block header_content %}
+<h1>Login Time</h1>
+<p class="text-muted mb-0">Mark your daily check-in / check-out and review your attendance history.</p>
+{% endblock %}
+
+{% block content %}
+<div class="row g-4 mb-4">
+    <!-- Attendance Action Card -->
+    <div class="col-md-4">
+        <div class="glass-card h-100 text-center d-flex flex-column justify-content-center align-items-center">
+            <h5 class="fw-bold mb-3 text-start w-100"><i class="bi bi-clock-history text-indigo me-2"></i> Today's Attendance</h5>
+
+            {% if not today_attendance %}
+                <div class="text-muted mb-3 fs-5"><i class="bi bi-geo-alt-fill me-1 text-danger"></i> Not Checked In</div>
+                <form action="{% url 'employee_check_in' %}" method="POST" class="w-100">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-premium w-100 py-2">
+                        <i class="bi bi-box-arrow-in-right me-1"></i> Daily Check In
+                    </button>
+                </form>
+            {% elif not today_attendance.check_out %}
+                <div class="text-success mb-3 fs-5">
+                    <i class="bi bi-check-circle-fill me-1"></i> Checked In at {{ today_attendance.check_in|time:"h:i A" }}
+                </div>
+                <form action="{% url 'employee_check_out' %}" method="POST" class="w-100">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger w-100 py-2" style="box-shadow: 0 4px 12px rgba(220, 53, 69, 0.2);">
+                        <i class="bi bi-box-arrow-left me-1"></i> Check Out
+                    </button>
+                </form>
+            {% else %}
+                <div class="text-primary mb-2 fs-5"><i class="bi bi-check2-all me-1"></i> Day Completed</div>
+                <div class="text-muted small" style="font-size: 0.85rem;">
+                    Check In: <strong>{{ today_attendance.check_in|time:"h:i A" }}</strong><br>
+                    Check Out: <strong>{{ today_attendance.check_out|time:"h:i A" }}</strong>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Monthly Summary -->
+    <div class="col-md-8">
+        <div class="glass-card h-100">
+            <h5 class="fw-bold mb-3"><i class="bi bi-bar-chart-fill text-indigo me-2"></i> Monthly Summary ({{ selected_month }}/{{ selected_year }})</h5>
+            <div class="row g-3 text-center">
+                <div class="col-4">
+                    <div class="p-3 rounded-3 bg-light border">
+                        <div class="fs-3 fw-bold text-success">{{ total_present }}</div>
+                        <div class="small text-secondary text-uppercase" style="font-size: 0.7rem;">Present</div>
+                    </div>
+                </div>
+                <div class="col-4">
+                    <div class="p-3 rounded-3 bg-light border">
+                        <div class="fs-3 fw-bold text-indigo">{{ total_half_days }}</div>
+                        <div class="small text-secondary text-uppercase" style="font-size: 0.7rem;">Half Days</div>
+                    </div>
+                </div>
+                <div class="col-4">
+                    <div class="p-3 rounded-3 bg-light border">
+                        <div class="fs-3 fw-bold text-danger">{{ total_absent }}</div>
+                        <div class="small text-secondary text-uppercase" style="font-size: 0.7rem;">Absent</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- History Table -->
+<div class="glass-card">
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
+        <h5 class="fw-bold mb-0"><i class="bi bi-table text-indigo me-2"></i> Attendance History</h5>
+        <form action="{% url 'employee_attendance' %}" method="GET" class="d-flex gap-2">
+            <select name="month" class="form-select form-select-sm">
+                {% for m_val, m_name in months %}
+                    <option value="{{ m_val }}" {% if m_val == selected_month %}selected{% endif %}>{{ m_name }}</option>
+                {% endfor %}
+            </select>
+            <select name="year" class="form-select form-select-sm">
+                {% for y in years %}
+                    <option value="{{ y }}" {% if y == selected_year %}selected{% endif %}>{{ y }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit" class="btn btn-outline-premium btn-sm">Filter</button>
+        </form>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover align-middle">
+            <thead class="table-light text-uppercase" style="font-size: 0.7rem;">
+                <tr>
+                    <th>Date</th>
+                    <th>Status</th>
+                    <th>Check In</th>
+                    <th>Check Out</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if attendances %}
+                    {% for att in attendances %}
+                        <tr>
+                            <td class="fw-semibold">{{ att.date|date:"M d, Y" }}</td>
+                            <td>
+                                <span class="badge badge-{{ att.status }} rounded-pill px-2 py-1" style="font-size: 0.7rem;">
+                                    {{ att.get_status_display }}
+                                </span>
+                            </td>
+                            <td>{{ att.check_in|time:"h:i A"|default:"-" }}</td>
+                            <td>{{ att.check_out|time:"h:i A"|default:"-" }}</td>
+                        </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="4" class="text-center text-muted small py-4">No attendance records found for this period.</td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<style>
+    .bg-indigo-subtle { background-color: #eef2ff !important; }
+    .text-indigo { color: #4f46e5 !important; }
+</style>
+{% endblock %}

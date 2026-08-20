@@ -1,0 +1,95 @@
+{% extends 'admin_dashboard/base.html' %}
+
+{% block title %}Employee Dashboard | HRMS Portal{% endblock %}
+{% block active_dashboard %}active{% endblock %}
+
+{% block header_content %}
+<h1>Employee Portal</h1>
+<p class="text-muted mb-0">Welcome back, {{ request.user.first_name|default:request.user.username }}!</p>
+{% endblock %}
+
+{% block content %}
+<!-- Module Quick Links -->
+<div class="row g-4 mb-4">
+    <div class="col-6 col-md-3">
+        <a href="{% url 'employee_leaves' %}" class="text-decoration-none">
+            <div class="glass-card text-center py-4">
+                <i class="bi bi-calendar2-plus text-indigo fs-3"></i>
+                <div class="fw-semibold mt-2 text-dark">Apply for Leave</div>
+                <div class="text-muted small">{{ pending_applications_count }} pending</div>
+            </div>
+        </a>
+    </div>
+    <div class="col-6 col-md-3">
+        <a href="{% url 'employee_calendar' %}" class="text-decoration-none">
+            <div class="glass-card text-center py-4">
+                <i class="bi bi-calendar3 text-indigo fs-3"></i>
+                <div class="fw-semibold mt-2 text-dark">Calendar</div>
+                <div class="text-muted small">Attendance &amp; leave</div>
+            </div>
+        </a>
+    </div>
+    <div class="col-6 col-md-3">
+        <a href="{% url 'employee_work_logs' %}" class="text-decoration-none">
+            <div class="glass-card text-center py-4">
+                <i class="bi bi-list-check text-indigo fs-3"></i>
+                <div class="fw-semibold mt-2 text-dark">Task Management</div>
+                <div class="text-muted small">Log your day</div>
+            </div>
+        </a>
+    </div>
+    <div class="col-6 col-md-3">
+        <a href="{% url 'employee_projects' %}" class="text-decoration-none">
+            <div class="glass-card text-center py-4">
+                <i class="bi bi-kanban-fill text-indigo fs-3"></i>
+                <div class="fw-semibold mt-2 text-dark">Projects</div>
+                <div class="text-muted small">Working on now</div>
+            </div>
+        </a>
+    </div>
+</div>
+
+<!-- Recent Activity -->
+<div class="glass-card">
+    <h5 class="fw-bold mb-4"><i class="bi bi-activity text-indigo me-2"></i> Recent Task Activity</h5>
+    <div class="table-responsive">
+        <table class="table table-hover align-middle">
+            <thead class="table-light text-uppercase" style="font-size: 0.7rem;">
+                <tr>
+                    <th>Date</th>
+                    <th>Time Slot</th>
+                    <th>Hours</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if recent_activity %}
+                    {% for log in recent_activity %}
+                        <tr>
+                            <td class="fw-semibold">{{ log.date|date:"M d, Y" }}</td>
+                            <td class="text-indigo fw-semibold" style="font-size: 0.8rem;">
+                                {{ log.start_time|time:"H:i" }} - {{ log.end_time|time:"H:i" }}
+                            </td>
+                            <td>{{ log.hours_worked }}h</td>
+                            <td class="text-wrap" style="max-width: 300px;">{{ log.description }}</td>
+                        </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="4" class="text-center text-muted small py-4">No task logs entered yet.</td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<style>
+    .bg-indigo-subtle {
+        background-color: #eef2ff !important;
+    }
+    .text-indigo {
+        color: #4f46e5 !important;
+    }
+</style>
+{% endblock %}

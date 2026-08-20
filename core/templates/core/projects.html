@@ -1,0 +1,68 @@
+{% extends 'admin_dashboard/base.html' %}
+
+{% block title %}Projects | HRMS Portal{% endblock %}
+{% block active_projects %}active{% endblock %}
+
+{% block header_content %}
+<h1>Projects</h1>
+<p class="text-muted mb-0">Projects you're currently working on for the company.</p>
+{% endblock %}
+
+{% block content %}
+{% if active_projects %}
+    <h6 class="fw-bold mb-3 text-secondary">Active</h6>
+    <div class="row g-4 mb-4">
+        {% for project in active_projects %}
+            <div class="col-md-6 col-lg-4">
+                <div class="glass-card h-100">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <h5 class="fw-bold mb-0"><i class="bi bi-kanban-fill text-indigo me-2"></i>{{ project.name }}</h5>
+                        <span class="badge badge-active rounded-pill px-2 py-1" style="font-size: 0.7rem;">Active</span>
+                    </div>
+                    <p class="text-secondary small mb-3">{{ project.description|default:"No description provided."|truncatewords:25 }}</p>
+                    <div class="text-muted small">
+                        <i class="bi bi-calendar-event me-1"></i>
+                        {{ project.start_date|date:"M d, Y"|default:"-" }}
+                        {% if project.end_date %} &rarr; {{ project.end_date|date:"M d, Y" }}{% endif %}
+                    </div>
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+{% endif %}
+
+{% if other_projects %}
+    <h6 class="fw-bold mb-3 text-secondary">Other</h6>
+    <div class="row g-4">
+        {% for project in other_projects %}
+            <div class="col-md-6 col-lg-4">
+                <div class="glass-card h-100">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <h5 class="fw-bold mb-0"><i class="bi bi-kanban text-indigo me-2"></i>{{ project.name }}</h5>
+                        <span class="badge badge-{{ project.status }} rounded-pill px-2 py-1" style="font-size: 0.7rem;">
+                            {{ project.get_status_display }}
+                        </span>
+                    </div>
+                    <p class="text-secondary small mb-3">{{ project.description|default:"No description provided."|truncatewords:25 }}</p>
+                    <div class="text-muted small">
+                        <i class="bi bi-calendar-event me-1"></i>
+                        {{ project.start_date|date:"M d, Y"|default:"-" }}
+                        {% if project.end_date %} &rarr; {{ project.end_date|date:"M d, Y" }}{% endif %}
+                    </div>
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+{% endif %}
+
+{% if not active_projects and not other_projects %}
+    <div class="glass-card text-center py-5">
+        <i class="bi bi-kanban text-secondary" style="font-size: 2.5rem;"></i>
+        <p class="text-muted mt-3 mb-0">You haven't been assigned to any projects yet.</p>
+    </div>
+{% endif %}
+
+<style>
+    .text-indigo { color: #4f46e5 !important; }
+</style>
+{% endblock %}

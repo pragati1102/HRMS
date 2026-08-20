@@ -1,0 +1,135 @@
+{% extends 'admin_dashboard/base.html' %}
+
+{% block title %}Task Management | HRMS Portal{% endblock %}
+{% block active_worklogs %}active{% endblock %}
+
+{% block header_content %}
+<h1>Task Management</h1>
+<p class="text-muted mb-0">Log the tasks you've worked on today and review your task history.</p>
+{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+    <div class="col-lg-5">
+        <div class="glass-card">
+            <h5 class="fw-bold mb-4"><i class="bi bi-plus-circle text-indigo me-2"></i> Log a Task</h5>
+            <form action="{% url 'employee_add_worklog' %}" method="POST">
+                {% csrf_token %}
+                <div class="mb-3">
+                    <label for="date" class="form-label small fw-semibold text-secondary">Date</label>
+                    <input type="date" name="date" id="date" class="form-control" value="{{ today|date:'Y-m-d' }}" max="{{ today|date:'Y-m-d' }}">
+                </div>
+                <div class="row g-2 mb-3">
+                    <div class="col-md-6">
+                        <label for="start_time" class="form-label small fw-semibold text-secondary">Start Time</label>
+                        <input type="time" name="start_time" id="start_time" class="form-control" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="end_time" class="form-label small fw-semibold text-secondary">End Time</label>
+                        <input type="time" name="end_time" id="end_time" class="form-control" required>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label for="category" class="form-label small fw-semibold text-secondary">Category</label>
+                    <select name="category" id="category" class="form-select">
+                        {% for cat in categories %}
+                            <option value="{{ cat }}">{{ cat }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="mb-4">
+                    <label for="description" class="form-label small fw-semibold text-secondary">Task Description</label>
+                    <textarea name="description" id="description" class="form-control" rows="3" placeholder="What did you work on?" required></textarea>
+                </div>
+                <button type="submit" class="btn btn-premium w-100 py-2">
+                    <i class="bi bi-plus-circle me-1"></i> Add Task Log
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <div class="col-lg-7">
+        <div class="glass-card mb-4">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="fw-bold mb-0"><i class="bi bi-card-list text-indigo me-2"></i> Today's Tasks ({{ today|date:"M d, Y" }})</h5>
+                <span class="badge bg-indigo-subtle text-indigo border px-2 py-1">{{ total_hours_today }}h logged</span>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead class="table-light text-uppercase" style="font-size: 0.7rem;">
+                        <tr>
+                            <th>Time Slot</th>
+                            <th>Category</th>
+                            <th>Description</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if today_work_logs %}
+                            {% for log in today_work_logs %}
+                                <tr>
+                                    <td class="fw-semibold text-indigo" style="font-size: 0.8rem;">
+                                        {{ log.start_time|time:"H:i" }} - {{ log.end_time|time:"H:i" }}<br>
+                                        <span class="text-muted fw-normal">{{ log.hours_worked }}h</span>
+                                    </td>
+                                    <td><span class="badge bg-light border text-secondary">{{ log.category }}</span></td>
+                                    <td class="text-wrap" style="max-width: 220px; font-size: 0.85rem;">{{ log.description }}</td>
+                                    <td class="text-end">
+                                        <a href="{% url 'employee_edit_worklog' log.pk %}" class="btn btn-sm btn-outline-premium py-1 px-2">
+                                            <i class="bi bi-pencil"></i>
+                                        </a>
+                                        <form action="{% url 'employee_delete_worklog' log.pk %}" method="POST" class="d-inline" onsubmit="return confirm('Delete this task log?');">
+                                            {% csrf_token %}
+                                            <button type="submit" class="btn btn-sm btn-outline-danger py-1 px-2">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </form>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="4" class="text-center text-muted small py-4">No tasks logged for today yet.</td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="glass-card">
+            <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-3">
+                <h5 class="fw-bold mb-0"><i class="bi bi-archive text-indigo me-2"></i> Task History</h5>
+                <form action="{% url 'employee_work_logs' %}" method="GET" class="d-flex gap-2">
+                    <input type="date" name="start_date" class="form-control form-control-sm" value="{{ start_date }}">
+                    <input type="date" name="end_date" class="form-control form-control-sm" value="{{ end_date }}">
+                    <button type="submit" class="btn btn-outline-premium btn-sm">Filter</button>
+                </form>
+            </div>
+            {% if grouped_history %}
+                {% for day in grouped_history %}
+                    <div class="mb-3 pb-3 border-bottom">
+                        <div class="d-flex justify-content-between mb-2">
+                            <span class="fw-bold">{{ day.date|date:"M d, Y" }}</span>
+                            <span class="text-indigo fw-semibold small">{{ day.total_hours }}h total</span>
+                        </div>
+                        {% for log in day.logs %}
+                            <div class="d-flex justify-content-between small text-secondary py-1">
+                                <span>{{ log.start_time|time:"H:i" }} - {{ log.end_time|time:"H:i" }} · {{ log.category }}</span>
+                                <span class="text-truncate ms-2" style="max-width: 220px;">{{ log.description }}</span>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% endfor %}
+            {% else %}
+                <p class="text-center text-muted small py-4 mb-0">No task history found for this range.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<style>
+    .bg-indigo-subtle { background-color: #eef2ff !important; }
+    .text-indigo { color: #4f46e5 !important; }
+</style>
+{% endblock %}

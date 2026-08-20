@@ -1,0 +1,14 @@
+{% extends 'admin_dashboard/base.html' %}
+{% block title %}Leave Approvals | HRMS Dashboard{% endblock %}
+{% block active_leaves %}active{% endblock %}
+{% block header_content %}
+<h1>Leave Approvals</h1>
+<p class="text-muted mb-0">Approve or reject employee leave applications.</p>
+{% endblock %}
+{% block content %}
+<div class="glass-card">
+    <h2>Leave Approvals (Under Development)</h2>
+    <p>This page will list all pending leave applications and allow quick approval or rejection.</p>
+    <a href="{% url 'employee_list' %}" class="btn btn-premium mt-3">Back to Employee List</a>
+</div>
+{% endblock %}

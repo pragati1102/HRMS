@@ -1,0 +1,297 @@
+{% extends 'admin_dashboard/base.html' %}
+
+{% block title %}{{ employee.get_full_name|default:employee.username }} - Profile Detail | HRMS{% endblock %}
+{% block active_employees %}active{% endblock %}
+
+{% block header_content %}
+<div class="d-flex align-items-center gap-3">
+    <a href="{% url 'employee_list' %}" class="btn btn-outline-premium py-2 px-3">
+        <i class="bi bi-arrow-left"></i>
+    </a>
+    <div>
+        <h1>Employee Profile Detail</h1>
+        <p class="text-muted mb-0">View profile information, attendance analytics, task logs, and salary status.</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Profile and Salary Overview -->
+<div class="row g-4 mb-4">
+    <!-- Profile Info Card -->
+    <div class="col-lg-6">
+        <div class="glass-card h-100">
+            <h5 class="fw-bold mb-4"><i class="bi bi-person-lines-fill text-indigo me-2"></i> Profile Information</h5>
+            <div class="row g-3">
+                <div class="col-sm-6">
+                    <span class="text-secondary small d-block">Full Name</span>
+                    <strong class="text-dark fs-5">{{ employee.get_full_name|default:employee.username }}</strong>
+                </div>
+                <div class="col-sm-6">
+                    <span class="text-secondary small d-block">Email Address</span>
+                    <span class="text-dark">{{ employee.email|default:"N/A" }}</span>
+                </div>
+                <div class="col-sm-6">
+                    <span class="text-secondary small d-block">Department</span>
+                    <span class="text-dark fw-semibold text-uppercase">{{ employee.department|default:"N/A" }}</span>
+                </div>
+                <div class="col-sm-6">
+                    <span class="text-secondary small d-block">Designation</span>
+                    <span class="text-dark fw-semibold">{{ employee.designation|default:"N/A" }}</span>
+                </div>
+                <div class="col-sm-6">
+                    <span class="text-secondary small d-block">Joining Date</span>
+                    <span class="text-dark">{{ employee.joining_date|date:"F d, Y"|default:"N/A" }}</span>
+                </div>
+                <div class="col-sm-6">
+                    <span class="text-secondary small d-block">Base Salary</span>
+                    <strong class="text-indigo">${{ employee.salary_amount|floatformat:2 }} / month</strong>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Salary and Calculation Info -->
+    <div class="col-lg-6">
+        <div class="glass-card h-100 d-flex flex-column justify-content-between">
+            <div>
+                <h5 class="fw-bold mb-4"><i class="bi bi-wallet2 text-indigo me-2"></i> Salary Schedule & Status</h5>
+                <div class="row g-3">
+                    <div class="col-sm-6">
+                        <span class="text-secondary small d-block">Next Salary Due Date</span>
+                        <strong class="text-dark fs-5 text-indigo">{{ next_salary_due|date:"F d, Y"|default:"Not Configured" }}</strong>
+                        <small class="text-muted d-block" style="font-size: 0.75rem;">Due on the {{ employee.joining_date|date:"jS"|default:"-" }} of every month</small>
+                    </div>
+                    <div class="col-sm-6">
+                        <span class="text-secondary small d-block">This Month's Status ({{ today|date:"M Y" }})</span>
+                        {% if current_month_status %}
+                            {% if current_month_status.status == 'paid' %}
+                                <span class="badge bg-success-subtle text-success border px-2.5 py-1.5 fw-semibold mt-1">Paid on {{ current_month_status.paid_date|date:"M d, Y" }}</span>
+                            {% else %}
+                                <span class="badge bg-warning-subtle text-warning border px-2.5 py-1.5 fw-semibold mt-1">Pending</span>
+                            {% endif %}
+                        {% else %}
+                            <span class="badge bg-danger-subtle text-danger border px-2.5 py-1.5 fw-semibold mt-1">Unprocessed</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Place action buttons here for Step 3 later -->
+            <div class="border-top pt-3 mt-4">
+                <div class="d-flex justify-content-between align-items-center">
+                    <span class="text-secondary small">Actions</span>
+                    {% block salary_action_placeholder %}{% endblock %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Attendance Statistics and History -->
+<div class="row g-4 mb-4">
+    <!-- Monthly Attendance summary -->
+    <div class="col-lg-7">
+        <div class="glass-card h-100">
+            <h5 class="fw-bold mb-3"><i class="bi bi-bar-chart-fill text-indigo me-2"></i> Monthly Attendance Performance</h5>
+            <div class="table-responsive">
+                <table class="table align-middle">
+                    <thead>
+                        <tr>
+                            <th>Month</th>
+                            <th>Total Days</th>
+                            <th>Present</th>
+                            <th>Half Days</th>
+                            <th>Absent / Leave</th>
+                            <th class="text-end">Monthly %</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if monthly_attendance_summary %}
+                            {% for stat in monthly_attendance_summary %}
+                                <tr>
+                                    <td><strong>{{ stat.month_name }} {{ stat.year }}</strong></td>
+                                    <td>{{ stat.total }}</td>
+                                    <td>{{ stat.present }}</td>
+                                    <td>{{ stat.half_day }}</td>
+                                    <td>{{ stat.absent }} / {{ stat.leave }}</td>
+                                    <td class="text-end">
+                                        <span class="fw-bold {% if stat.percentage >= 85 %}text-success{% elif stat.percentage >= 50 %}text-warning{% else %}text-danger{% endif %}">
+                                            {{ stat.percentage }}%
+                                        </span>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="6" class="text-center py-4 text-muted">No monthly summaries generated yet.</td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Daily Log Scroll list -->
+    <div class="col-lg-5">
+        <div class="glass-card h-100 d-flex flex-column">
+            <h5 class="fw-bold mb-3"><i class="bi bi-calendar3 text-indigo me-2"></i> Daily Attendance Records</h5>
+            <div class="table-responsive flex-grow-1" style="max-height: 250px; overflow-y: auto;">
+                <table class="table table-sm align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Date</th>
+                            <th>Check In/Out</th>
+                            <th class="text-end">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if daily_attendance %}
+                            {% for record in daily_attendance %}
+                                <tr>
+                                    <td>{{ record.date|date:"M d, Y" }}</td>
+                                    <td class="small text-secondary">
+                                        {% if record.check_in %}
+                                            In: {{ record.check_in|time:"H:i" }} | Out: {{ record.check_out|time:"H:i"|default:"-" }}
+                                        {% else %}
+                                            -
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-end">
+                                        <span class="badge badge-{{ record.status }} rounded-3 px-2 py-1 fw-semibold" style="font-size: 0.7rem;">
+                                            {{ record.status|title }}
+                                        </span>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="3" class="text-center py-4 text-muted">No attendance logs found.</td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Task logs and leaves row -->
+<div class="row g-4">
+    <!-- Work logs with date filters -->
+    <div class="col-lg-6">
+        <div class="glass-card h-100">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="fw-bold mb-0"><i class="bi bi-journals text-indigo me-2"></i> Work Logs</h5>
+                <!-- Date Filter Toggle / Form -->
+                <form method="GET" class="d-flex align-items-center gap-2">
+                    <input type="date" name="worklog_start" class="form-control form-control-sm" value="{{ worklog_start }}" title="Start Date">
+                    <span class="text-muted small">to</span>
+                    <input type="date" name="worklog_end" class="form-control form-control-sm" value="{{ worklog_end }}" title="End Date">
+                    <button type="submit" class="btn btn-sm btn-premium py-1"><i class="bi bi-funnel-fill"></i></button>
+                    <a href="{% url 'employee_detail' employee.id %}" class="btn btn-sm btn-outline-premium py-1"><i class="bi bi-arrow-clockwise"></i></a>
+                </form>
+            </div>
+            
+            <div class="table-responsive" style="max-height: 350px; overflow-y: auto;">
+                <table class="table table-hover align-middle">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Slot</th>
+                            <th>Hours</th>
+                            <th>Tasks Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if work_logs %}
+                            {% for log in work_logs %}
+                                <tr>
+                                    <td class="small">{{ log.date|date:"M d, Y" }}</td>
+                                    <td class="small fw-semibold text-indigo">{{ log.start_time|time:"H:i" }}-{{ log.end_time|time:"H:i" }}</td>
+                                    <td>{{ log.hours_worked }}</td>
+                                    <td class="text-wrap small" style="max-width: 220px;">{{ log.description }}</td>
+                                </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="4" class="text-center py-4 text-muted">No task logs found in this range.</td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Leaves taken and pending leaves -->
+    <div class="col-lg-6">
+        <div class="glass-card h-100">
+            <h5 class="fw-bold mb-4"><i class="bi bi-calendar2-week text-indigo me-2"></i> Leave & Holiday History</h5>
+            
+            <!-- Pending / Future leaves -->
+            <h6 class="fw-bold text-secondary mb-2">Applied & Pending Requests</h6>
+            <div class="table-responsive mb-4">
+                <table class="table table-sm align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Dates</th>
+                            <th>Reason</th>
+                            <th class="text-end">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if active_leaves %}
+                            {% for leave in active_leaves %}
+                                <tr>
+                                    <td class="small">{{ leave.start_date|date:"M d" }} - {{ leave.end_date|date:"M d, Y" }}</td>
+                                    <td class="text-wrap small" style="max-width: 220px;">{{ leave.reason }}</td>
+                                    <td class="text-end">
+                                        <span class="badge badge-{{ leave.status }} rounded-pill px-2 py-1" style="font-size: 0.7rem;">
+                                            {{ leave.status|title }}
+                                        </span>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="3" class="text-center py-2 text-muted small">No pending/active leaves.</td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Taken leaves -->
+            <h6 class="fw-bold text-secondary mb-2">Approved Leaves (Taken)</h6>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Dates</th>
+                            <th>Reason</th>
+                            <th class="text-end">Approved By</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if taken_leaves %}
+                            {% for leave in taken_leaves %}
+                                <tr>
+                                    <td class="small">{{ leave.start_date|date:"M d" }} - {{ leave.end_date|date:"M d, Y" }}</td>
+                                    <td class="text-wrap small" style="max-width: 220px;">{{ leave.reason }}</td>
+                                    <td class="text-end small">{{ leave.approved_by.username|default:"-" }}</td>
+                                </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="3" class="text-center py-2 text-muted small">No past approved leaves logged.</td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

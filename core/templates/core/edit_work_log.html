@@ -1,0 +1,54 @@
+{% extends 'admin_dashboard/base.html' %}
+
+{% block title %}Edit Task | HRMS Portal{% endblock %}
+{% block active_worklogs %}active{% endblock %}
+
+{% block header_content %}
+<h1>Edit Task</h1>
+<p class="text-muted mb-0">Update today's task log entry.</p>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-6">
+        <div class="glass-card">
+            <h5 class="fw-bold mb-4"><i class="bi bi-pencil-square text-indigo me-2"></i> {{ log.date|date:"M d, Y" }}</h5>
+            <form action="{% url 'employee_edit_worklog' log.pk %}" method="POST">
+                {% csrf_token %}
+                <div class="row g-2 mb-3">
+                    <div class="col-md-6">
+                        <label for="start_time" class="form-label small fw-semibold text-secondary">Start Time</label>
+                        <input type="time" name="start_time" id="start_time" class="form-control" value="{{ log.start_time|time:'H:i' }}" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="end_time" class="form-label small fw-semibold text-secondary">End Time</label>
+                        <input type="time" name="end_time" id="end_time" class="form-control" value="{{ log.end_time|time:'H:i' }}" required>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label for="category" class="form-label small fw-semibold text-secondary">Category</label>
+                    <select name="category" id="category" class="form-select">
+                        {% for cat in categories %}
+                            <option value="{{ cat }}" {% if cat == log.category %}selected{% endif %}>{{ cat }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="mb-4">
+                    <label for="description" class="form-label small fw-semibold text-secondary">Task Description</label>
+                    <textarea name="description" id="description" class="form-control" rows="3" required>{{ log.description }}</textarea>
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="submit" class="btn btn-premium flex-fill py-2">
+                        <i class="bi bi-check2-circle me-1"></i> Save Changes
+                    </button>
+                    <a href="{% url 'employee_work_logs' %}" class="btn btn-outline-premium py-2 px-4">Cancel</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<style>
+    .text-indigo { color: #4f46e5 !important; }
+</style>
+{% endblock %}

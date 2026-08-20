@@ -1,0 +1,105 @@
+{% extends 'admin_dashboard/base.html' %}
+
+{% block title %}Apply for Leave | HRMS Portal{% endblock %}
+{% block active_apply_leave %}active{% endblock %}
+
+{% block header_content %}
+<h1>Apply for Leave</h1>
+<p class="text-muted mb-0">Submit a new leave request and track the status of your applications.</p>
+{% endblock %}
+
+{% block content %}
+<div class="row g-4 mb-4">
+    <div class="col-md-6">
+        <div class="glass-card h-100 text-center">
+            <div class="fs-2 fw-bold text-indigo">{{ leaves_taken_year }}</div>
+            <div class="text-secondary small text-uppercase" style="font-size: 0.75rem;">Leave Days Taken This Year</div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="glass-card h-100 text-center">
+            <div class="fs-2 fw-bold text-indigo">{{ pending_applications_count }}</div>
+            <div class="text-secondary small text-uppercase" style="font-size: 0.75rem;">Pending Applications</div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-5">
+        <div class="glass-card h-100">
+            <h5 class="fw-bold mb-4"><i class="bi bi-calendar2-plus text-indigo me-2"></i> New Application</h5>
+            <form action="{% url 'employee_apply_leave' %}" method="POST">
+                {% csrf_token %}
+                <div class="mb-3">
+                    <label for="leave_type" class="form-label small fw-semibold text-secondary">Leave Type</label>
+                    <select name="leave_type" id="leave_type" class="form-select">
+                        {% for lt in leave_types %}
+                            <option value="{{ lt }}">{{ lt }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="row g-2 mb-3">
+                    <div class="col-md-6">
+                        <label for="start_date" class="form-label small fw-semibold text-secondary">From Date</label>
+                        <input type="date" name="start_date" id="start_date" class="form-control" min="{{ today|date:'Y-m-d' }}" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="end_date" class="form-label small fw-semibold text-secondary">To Date</label>
+                        <input type="date" name="end_date" id="end_date" class="form-control" min="{{ today|date:'Y-m-d' }}" required>
+                    </div>
+                </div>
+                <div class="mb-4">
+                    <label for="reason" class="form-label small fw-semibold text-secondary">Reason for Leave</label>
+                    <textarea name="reason" id="reason" class="form-control" rows="3" placeholder="Reason for leave / holiday..." required></textarea>
+                </div>
+                <button type="submit" class="btn btn-premium w-100 py-2">
+                    <i class="bi bi-send-fill me-1"></i> Submit Application
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <div class="col-lg-7">
+        <div class="glass-card h-100">
+            <h5 class="fw-bold mb-4"><i class="bi bi-clock-history text-indigo me-2"></i> Application History</h5>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead class="table-light text-uppercase" style="font-size: 0.7rem;">
+                        <tr>
+                            <th>Type</th>
+                            <th>Dates</th>
+                            <th>Reason</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if leave_applications %}
+                            {% for leave in leave_applications %}
+                                <tr>
+                                    <td class="small fw-semibold">{{ leave.leave_type }}</td>
+                                    <td class="small">{{ leave.start_date|date:"M d" }} - {{ leave.end_date|date:"M d, Y" }}</td>
+                                    <td class="text-wrap" style="max-width: 200px; font-size: 0.85rem;">{{ leave.reason }}</td>
+                                    <td>
+                                        <span class="badge badge-{{ leave.status }} rounded-pill px-2 py-1" style="font-size: 0.7rem;">
+                                            {{ leave.status|title }}
+                                        </span>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="4" class="text-center text-muted small py-4">No leave applications found.</td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .bg-indigo-subtle { background-color: #eef2ff !important; }
+    .text-indigo { color: #4f46e5 !important; }
+</style>
+{% endblock %}

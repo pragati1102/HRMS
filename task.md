@@ -1,0 +1,23 @@
+# HRMS System Implementation Checklist
+
+- `[x]` Step 1: Models + admin permission class + employee list view
+    - `[x]` Install packages and initialize Django project
+    - `[x]` Define custom User model and other models (Attendance, WorkLog, LeaveApplication, Salary)
+    - `[x]` Write custom Admin permission class
+    - `[x]` Create API endpoints for Employee List and views for Employee List (search & filter)
+    - `[x]` Build HTML template for Employee List using Bootstrap 5
+    - `[x]` Seed database with mock data for testing
+- `[x]` Step 1.1: Update Models for Employee Side
+    - `[x]` Update `Attendance` model with check-in/check-out fields
+    - `[x]` Update `WorkLog` model with start/end time fields and duration auto-calculation
+    - `[x]` Apply migrations and update DB seed command
+- `[x]` Step 2: Employee Detail View & Employee Dashboard (profile + attendance + work logs + leaves)
+    - `[x]` Implement Employee Dashboard with check-in/out and slot-based work logs
+    - `[x]` Implement Leave/Holiday application for employees
+    - `[x]` Update Admin's Employee Detail View with slot-based logs & attendance check times
+- `[/]` Step 3: Salary calculation logic + salary status display + "mark as paid" action
+    - `[ ]` Display next salary due date on employee detail page & dashboard (Done in views/templates, but let's confirm details)
+    - `[ ]` Implement Admin action to mark a given month's salary as "Paid" (updates/creates Salary record)
+    - `[ ]` Implement dynamic salary status overview table on admin dashboard / lists
+- `[ ]` Step 4: Leave approval system
+- `[ ]` Step 5: Excel export for individual employee and company-wide summary

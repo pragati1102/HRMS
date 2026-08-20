@@ -1,0 +1,72 @@
+{% extends 'admin_dashboard/base.html' %}
+
+{% block title %}Salary | HRMS Portal{% endblock %}
+{% block active_salary %}active{% endblock %}
+
+{% block header_content %}
+<h1>Salary</h1>
+<p class="text-muted mb-0">Your current salary status and payment history.</p>
+{% endblock %}
+
+{% block content %}
+<div class="row g-4 mb-4">
+    <div class="col-md-4">
+        <div class="glass-card h-100 text-center">
+            <div class="text-secondary small text-uppercase mb-2" style="font-size: 0.75rem;">Current Status</div>
+            <span class="badge badge-{{ current_status|lower }} rounded-pill px-3 py-2 fs-6">{{ current_status }}</span>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="glass-card h-100 text-center">
+            <div class="text-secondary small text-uppercase mb-2" style="font-size: 0.75rem;">Amount</div>
+            <div class="fs-3 fw-bold text-indigo">${{ current_amount|floatformat:2 }}</div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="glass-card h-100 text-center">
+            <div class="text-secondary small text-uppercase mb-2" style="font-size: 0.75rem;">Next Salary Due</div>
+            <div class="fs-5 fw-bold">{{ next_salary_date|date:"M d, Y"|default:"Not Configured" }}</div>
+        </div>
+    </div>
+</div>
+
+<div class="glass-card">
+    <h5 class="fw-bold mb-4"><i class="bi bi-clock-history text-indigo me-2"></i> Payment History</h5>
+    <div class="table-responsive">
+        <table class="table table-hover align-middle">
+            <thead class="table-light text-uppercase" style="font-size: 0.7rem;">
+                <tr>
+                    <th>Month</th>
+                    <th>Amount</th>
+                    <th>Status</th>
+                    <th>Paid On</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if salary_history %}
+                    {% for salary in salary_history %}
+                        <tr>
+                            <td class="fw-semibold">{{ salary.year }} / {{ salary.month|stringformat:"02d" }}</td>
+                            <td>${{ salary.amount|floatformat:2 }}</td>
+                            <td>
+                                <span class="badge badge-{{ salary.status }} rounded-pill px-2 py-1" style="font-size: 0.7rem;">
+                                    {{ salary.get_status_display }}
+                                </span>
+                            </td>
+                            <td>{{ salary.paid_date|date:"M d, Y"|default:"-" }}</td>
+                        </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="4" class="text-center text-muted small py-4">No salary records found yet.</td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<style>
+    .text-indigo { color: #4f46e5 !important; }
+</style>
+{% endblock %}
