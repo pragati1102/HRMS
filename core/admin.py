@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from .models import Attendance, AttendanceCorrectionRequest, CompanyHoliday, EmployeeDocument, LeaveApplication, Project, ProjectAssignment, ProjectMilestone, ProjectResource, ProjectTask, ProjectTechnology, User
+from .models import Attendance, AttendanceCorrectionRequest, CompanyHoliday, EmployeeDocument, LeaveApplication, PayrollTaxDocument, Project, ProjectAssignment, ProjectMilestone, ProjectResource, ProjectTask, ProjectTechnology, Salary, SalaryComponent, User
 
 
 @admin.register(User)
@@ -91,3 +91,23 @@ class LeaveApplicationAdmin(admin.ModelAdmin):
     search_fields = ('employee__username', 'employee__first_name', 'employee__last_name', 'reason')
     readonly_fields = ('employee', 'start_date', 'end_date', 'reason', 'leave_type', 'half_day_session', 'supporting_document', 'handover_contact', 'applied_on')
     fields = ('employee', 'leave_type', 'start_date', 'end_date', 'half_day_session', 'reason', 'supporting_document', 'handover_contact', 'status', 'approved_by', 'approval_notes', 'applied_on')
+
+
+class SalaryComponentInline(admin.TabularInline):
+    model = SalaryComponent
+    extra = 0
+
+
+@admin.register(Salary)
+class SalaryAdmin(admin.ModelAdmin):
+    list_display = ('employee', 'year', 'month', 'amount', 'status', 'paid_date')
+    list_filter = ('status', 'year', 'month')
+    search_fields = ('employee__username', 'employee__first_name', 'employee__last_name')
+    inlines = [SalaryComponentInline]
+
+
+@admin.register(PayrollTaxDocument)
+class PayrollTaxDocumentAdmin(admin.ModelAdmin):
+    list_display = ('employee', 'financial_year', 'document_type', 'uploaded_at')
+    list_filter = ('financial_year', 'document_type')
+    search_fields = ('employee__username', 'employee__first_name', 'employee__last_name')

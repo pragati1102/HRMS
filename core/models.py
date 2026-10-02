@@ -375,6 +375,7 @@ class Salary(models.Model):
     STATUS_CHOICES = [
         ('paid', 'Paid'),
         ('pending', 'Pending'),
+        ('processing', 'Processing'),
     ]
     employee = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='salaries')
     month = models.IntegerField()
@@ -382,12 +383,58 @@ class Salary(models.Model):
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     paid_date = models.DateField(null=True, blank=True)
+    remarks = models.TextField(blank=True)
 
     class Meta:
         unique_together = ('employee', 'month', 'year')
 
     def __str__(self):
         return f"{self.employee.username} - {self.year}/{self.month:02d} - {self.status}"
+
+
+class SalaryComponent(models.Model):
+    COMPONENT_TYPES = [
+        ('earning', 'Earning'),
+        ('deduction', 'Deduction'),
+    ]
+    salary = models.ForeignKey(Salary, on_delete=models.CASCADE, related_name='components')
+    component_type = models.CharField(max_length=20, choices=COMPONENT_TYPES)
+    name = models.CharField(max_length=120)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    formula = models.TextField(blank=True)
+    dates = models.JSONField(default=list, blank=True)
+    remarks = models.TextField(blank=True)
+    order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['component_type', 'order', 'id']
+
+    def __str__(self):
+        return f'{self.name}: {self.amount}'
+
+
+class PayrollTaxDocument(models.Model):
+    DOCUMENT_TYPES = [
+        ('form16_a', 'Form 16 Part A'),
+        ('form16_b', 'Form 16 Part B'),
+        ('tax_computation', 'Annual Tax Computation'),
+        ('investment_declaration', 'Investment Declaration Summary'),
+    ]
+    employee = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='payroll_tax_documents')
+    financial_year = models.CharField(max_length=9)
+    document_type = models.CharField(max_length=30, choices=DOCUMENT_TYPES)
+    file = models.FileField(
+        upload_to='payroll_tax_documents/',
+        validators=[FileExtensionValidator(allowed_extensions=['pdf'])],
+    )
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-financial_year', 'document_type']
+        unique_together = ('employee', 'financial_year', 'document_type')
+
+    def __str__(self):
+        return f'{self.employee} - FY {self.financial_year} - {self.get_document_type_display()}'
 
 
 class EmployeeDocument(models.Model):

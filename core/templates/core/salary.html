@@ -5,68 +5,179 @@
 
 {% block header_content %}
 <h1>Salary</h1>
-<p class="text-muted mb-0">Your current salary status and payment history.</p>
+<p class="text-muted mb-0">Review your monthly pay, payroll adjustments, and tax documents.</p>
 {% endblock %}
 
 {% block content %}
-<div class="row g-4 mb-4">
-    <div class="col-md-4">
-        <div class="glass-card h-100 text-center">
-            <div class="text-secondary small text-uppercase mb-2" style="font-size: 0.75rem;">Current Status</div>
-            <span class="badge badge-{{ current_status|lower }} rounded-pill px-3 py-2 fs-6">{{ current_status }}</span>
-        </div>
-    </div>
-    <div class="col-md-4">
-        <div class="glass-card h-100 text-center">
-            <div class="text-secondary small text-uppercase mb-2" style="font-size: 0.75rem;">Amount</div>
-            <div class="fs-3 fw-bold text-indigo">${{ current_amount|floatformat:2 }}</div>
-        </div>
-    </div>
-    <div class="col-md-4">
-        <div class="glass-card h-100 text-center">
-            <div class="text-secondary small text-uppercase mb-2" style="font-size: 0.75rem;">Next Salary Due</div>
-            <div class="fs-5 fw-bold">{{ next_salary_date|date:"M d, Y"|default:"Not Configured" }}</div>
-        </div>
-    </div>
-</div>
+<section class="payroll-summary" aria-label="Current payroll summary">
+    <article class="payroll-stat"><span>Gross Salary</span><strong>${{ gross_salary|floatformat:2 }}</strong><small>Current pay period</small></article>
+    <article class="payroll-stat"><span>Total Deductions</span><strong class="deduction-amount">${{ total_deductions|floatformat:2 }}</strong><small>Itemized below</small></article>
+    <article class="payroll-stat"><span>Net Payable</span><strong>${{ net_payable|floatformat:2 }}</strong><small>After recorded deductions</small></article>
+    <article class="payroll-stat payout-stat"><span>Next Payout</span><strong><span class="status-dot status-dot-{{ current_status|lower }}"></span>{{ current_status }}</strong><small>{{ next_salary_date|date:"M d, Y"|default:"Date not configured" }}</small></article>
+</section>
 
-<div class="glass-card">
-    <h5 class="fw-bold mb-4"><i class="bi bi-clock-history text-indigo me-2"></i> Payment History</h5>
+<section class="payroll-section" aria-labelledby="breakdown-title">
+    <div class="section-heading">
+        <div><h2 id="breakdown-title"><i class="bi bi-receipt-cutoff" aria-hidden="true"></i> Salary Breakdown</h2><p>Current month earnings and deductions</p></div>
+        {% if current_payroll_remarks %}<span class="payroll-note"><i class="bi bi-chat-square-text" aria-hidden="true"></i> HR remarks available</span>{% endif %}
+    </div>
+    <div class="breakdown-columns">
+        <div class="breakdown-panel">
+            <h3>Earnings</h3>
+            <div class="component-list">
+                {% for component in current_earnings %}
+                    {% if component %}<div class="component-row"><span>{{ component.name }}</span><strong>${{ component.amount|floatformat:2 }}</strong></div>
+                    {% else %}<div class="component-row"><span>Recorded Pay</span><strong>${{ gross_salary|floatformat:2 }}</strong></div>{% endif %}
+                {% empty %}<p class="empty-line">No earning components recorded.</p>{% endfor %}
+            </div>
+            <div class="component-total"><span>Gross Salary</span><strong>${{ gross_salary|floatformat:2 }}</strong></div>
+        </div>
+        <div class="breakdown-panel deductions-panel">
+            <h3>Deductions</h3>
+            <div class="component-list">
+                {% for component in current_deductions %}
+                    <div class="component-row deduction-row">
+                        <div><span>{{ component.name }}</span>
+                            {% if component.formula or component.dates or component.remarks %}
+                                <details class="deduction-details"><summary>Explanation</summary>
+                                    {% if component.formula %}<p><b>Calculation:</b> {{ component.formula }}</p>{% endif %}
+                                    {% if component.dates %}<p><b>Dates:</b> {{ component.dates|join:", " }}</p>{% endif %}
+                                    {% if component.remarks %}<p><b>Payroll note:</b> {{ component.remarks }}</p>{% endif %}
+                                </details>
+                            {% endif %}
+                        </div>
+                        <strong>-${{ component.amount|floatformat:2 }}</strong>
+                    </div>
+                {% empty %}<p class="empty-line">No deductions recorded.</p>{% endfor %}
+            </div>
+            <div class="component-total"><span>Total Deductions</span><strong>${{ total_deductions|floatformat:2 }}</strong></div>
+        </div>
+    </div>
+    {% if current_payroll_remarks %}<p class="payroll-remarks"><b>Payroll remarks:</b> {{ current_payroll_remarks }}</p>{% endif %}
+</section>
+
+<section class="payroll-section" aria-labelledby="history-title">
+    <div class="section-heading history-heading">
+        <div><h2 id="history-title"><i class="bi bi-clock-history" aria-hidden="true"></i> Payment History</h2><p>Monthly gross, deductions, and net payment records</p></div>
+        <form action="{% url 'employee_salary' %}" method="GET" class="history-filters">
+            <label class="visually-hidden" for="salary-year">Year</label>
+            <select name="year" id="salary-year" class="form-select form-select-sm"><option value="">All years</option>{% for year in year_options %}<option value="{{ year }}" {% if selected_year == year|stringformat:"s" %}selected{% endif %}>{{ year }}</option>{% endfor %}</select>
+            <label class="visually-hidden" for="salary-quarter">Quarter</label>
+            <select name="quarter" id="salary-quarter" class="form-select form-select-sm"><option value="">All quarters</option><option value="1" {% if selected_quarter == '1' %}selected{% endif %}>Q1 · Jan–Mar</option><option value="2" {% if selected_quarter == '2' %}selected{% endif %}>Q2 · Apr–Jun</option><option value="3" {% if selected_quarter == '3' %}selected{% endif %}>Q3 · Jul–Sep</option><option value="4" {% if selected_quarter == '4' %}selected{% endif %}>Q4 · Oct–Dec</option></select>
+            <label class="visually-hidden" for="salary-search">Search payments</label>
+            <input type="search" name="q" id="salary-search" class="form-control form-control-sm" placeholder="Search payroll" value="{{ search_query }}">
+            <button class="btn btn-premium btn-sm" type="submit"><i class="bi bi-search" aria-hidden="true"></i><span class="visually-hidden">Apply filters</span></button>
+        </form>
+    </div>
     <div class="table-responsive">
-        <table class="table table-hover align-middle">
-            <thead class="table-light text-uppercase" style="font-size: 0.7rem;">
-                <tr>
-                    <th>Month</th>
-                    <th>Amount</th>
-                    <th>Status</th>
-                    <th>Paid On</th>
-                </tr>
-            </thead>
+        <table class="table table-hover align-middle payroll-history-table">
+            <thead class="table-light text-uppercase"><tr><th>Month</th><th>Gross Amount</th><th>Total Deductions</th><th>Net Paid</th><th>Status</th><th>Paid On</th><th>Payslip</th></tr></thead>
             <tbody>
-                {% if salary_history %}
-                    {% for salary in salary_history %}
-                        <tr>
-                            <td class="fw-semibold">{{ salary.year }} / {{ salary.month|stringformat:"02d" }}</td>
-                            <td>${{ salary.amount|floatformat:2 }}</td>
-                            <td>
-                                <span class="badge badge-{{ salary.status }} rounded-pill px-2 py-1" style="font-size: 0.7rem;">
-                                    {{ salary.get_status_display }}
-                                </span>
-                            </td>
-                            <td>{{ salary.paid_date|date:"M d, Y"|default:"-" }}</td>
-                        </tr>
-                    {% endfor %}
-                {% else %}
+                {% for row in salary_rows %}
                     <tr>
-                        <td colspan="4" class="text-center text-muted small py-4">No salary records found yet.</td>
+                        <td class="fw-semibold">{{ row.salary.year }} / {{ row.salary.month|stringformat:"02d" }}
+                            <details class="history-breakdown"><summary>View breakdown</summary>
+                                <div class="history-breakdown-content">
+                                    {% for component in row.earnings %}{% if component %}<p><span>{{ component.name }}</span><b>${{ component.amount|floatformat:2 }}</b></p>{% else %}<p><span>Recorded Pay</span><b>${{ row.gross|floatformat:2 }}</b></p>{% endif %}{% endfor %}
+                                    {% for component in row.deductions %}
+                                        <p class="history-deduction"><span>{{ component.name }}{% if component.formula %}<small>{{ component.formula }}</small>{% endif %}{% if component.dates %}<small>Dates: {{ component.dates|join:", " }}</small>{% endif %}{% if component.remarks %}<small>{{ component.remarks }}</small>{% endif %}</span><b>-${{ component.amount|floatformat:2 }}</b></p>
+                                    {% endfor %}
+                                    {% if row.salary.remarks %}<p class="history-remarks">HR note: {{ row.salary.remarks }}</p>{% endif %}
+                                </div>
+                            </details>
+                        </td>
+                        <td>${{ row.gross|floatformat:2 }}</td>
+                        <td>${{ row.total_deductions|floatformat:2 }}</td>
+                        <td class="fw-bold">${{ row.net_pay|floatformat:2 }}</td>
+                        <td><span class="payroll-status status-{{ row.salary.status }}">{{ row.salary.get_status_display }}</span></td>
+                        <td>{{ row.salary.paid_date|date:"M d, Y"|default:"-" }}</td>
+                        <td>{% if row.salary.status == 'paid' %}<a class="download-button" href="{% url 'employee_payslip_download' row.salary.pk %}" title="Download payslip PDF"><i class="bi bi-file-earmark-pdf" aria-hidden="true"></i><span>PDF</span></a>{% else %}<span class="muted-dash">-</span>{% endif %}</td>
                     </tr>
-                {% endif %}
+                {% empty %}<tr><td colspan="7" class="text-center text-muted small py-4">No salary records match these filters.</td></tr>{% endfor %}
             </tbody>
         </table>
     </div>
-</div>
+</section>
+
+<section class="payroll-section tax-section" aria-labelledby="tax-title">
+    <div class="section-heading history-heading">
+        <div><h2 id="tax-title"><i class="bi bi-file-earmark-ruled" aria-hidden="true"></i> Tax &amp; Form 16 Documents</h2><p>Annual tax documents shared by HR</p></div>
+        <form action="{% url 'employee_salary' %}" method="GET" class="tax-year-filter">
+            <label for="financial-year">Financial year</label>
+            <select name="financial_year" id="financial-year" class="form-select form-select-sm">{% for financial_year in financial_year_options %}<option value="{{ financial_year }}" {% if selected_financial_year == financial_year %}selected{% endif %}>FY {{ financial_year }}</option>{% endfor %}</select>
+            <button class="btn btn-outline-premium btn-sm" type="submit">View</button>
+        </form>
+    </div>
+    <div class="tax-document-grid">
+        {% for item in tax_document_rows %}
+            <article class="tax-document-row">
+                <span class="tax-document-icon"><i class="bi bi-file-earmark-pdf" aria-hidden="true"></i></span>
+                <div><strong>{{ item.label }}</strong><small>FY {{ selected_financial_year }}</small></div>
+                {% if item.document %}<a href="{% url 'employee_tax_document_download' item.document.pk %}" class="btn btn-outline-premium btn-sm"><i class="bi bi-download me-1" aria-hidden="true"></i>Download</a>{% else %}<span class="document-unavailable">Not uploaded</span>{% endif %}
+            </article>
+        {% endfor %}
+    </div>
+</section>
 
 <style>
     .text-indigo { color: #4f46e5 !important; }
+    .payroll-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 20px; }
+    .payroll-stat { display: grid; min-height: 112px; align-content: center; gap: 7px; padding: 18px 20px; border: 1px solid #e2e8f0; border-radius: 9px; background: #fff; box-shadow: 0 5px 16px rgba(15, 23, 42, .035); }
+    .payroll-stat > span { color: #64748b; font-size: .68rem; font-weight: 700; text-transform: uppercase; }
+    .payroll-stat strong { color: #4f46e5; font-size: 1.45rem; }
+    .payroll-stat small { color: #94a3b8; font-size: .75rem; }
+    .payroll-stat .deduction-amount { color: #b45309; }
+    .payout-stat strong { display: flex; align-items: center; gap: 7px; color: #0f172a; font-size: 1rem; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #d97706; }
+    .status-dot-paid { background: #059669; }
+    .status-dot-processing { background: #2563eb; }
+    .payroll-section { margin-bottom: 20px; padding: 20px; border: 1px solid #e2e8f0; border-radius: 9px; background: #fff; box-shadow: 0 5px 16px rgba(15, 23, 42, .025); }
+    .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 17px; }
+    .section-heading h2 { display: flex; align-items: center; gap: 9px; margin: 0; color: #0f172a; font-size: 1rem; font-weight: 700; }
+    .section-heading h2 i { color: #4f46e5; }
+    .section-heading p { margin: 5px 0 0; color: #64748b; font-size: .78rem; }
+    .payroll-note { padding: 6px 9px; border-radius: 5px; background: #eff6ff; color: #1d4ed8; font-size: .72rem; }
+    .breakdown-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px; }
+    .breakdown-panel { padding: 15px; border: 1px solid #e2e8f0; border-radius: 7px; }
+    .breakdown-panel h3 { margin: 0 0 8px; color: #047857; font-size: .82rem; font-weight: 700; }
+    .deductions-panel h3 { color: #b45309; }
+    .component-row, .component-total { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 9px 0; color: #475569; font-size: .8rem; border-bottom: 1px solid #f1f5f9; }
+    .component-row > strong, .component-total > strong { flex-shrink: 0; color: #0f172a; font-size: .8rem; }
+    .component-total { margin-top: 5px; border: 0; color: #0f172a; font-weight: 700; }
+    .component-total strong { color: #4f46e5; }
+    .deduction-details { margin-top: 5px; color: #64748b; font-size: .72rem; }
+    .deduction-details summary { width: fit-content; color: #4338ca; cursor: pointer; }
+    .deduction-details p { margin: 5px 0 0; white-space: pre-line; }
+    .empty-line, .muted-dash { margin: 0; color: #94a3b8; font-size: .78rem; }
+    .payroll-remarks { margin: 14px 0 0; padding: 11px 13px; border-left: 3px solid #6366f1; background: #f8fafc; color: #475569; font-size: .78rem; white-space: pre-line; }
+    .history-heading { align-items: flex-end; }
+    .history-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+    .history-filters select { width: 130px; }
+    .history-filters input { width: 165px; }
+    .payroll-history-table { min-width: 850px; }
+    .payroll-history-table thead th { font-size: .68rem; }
+    .payroll-status { display: inline-block; padding: 4px 9px; border-radius: 999px; background: #fef3c7; color: #a16207; font-size: .7rem; font-weight: 700; }
+    .payroll-status.status-paid { background: #d1fae5; color: #047857; }
+    .payroll-status.status-processing { background: #dbeafe; color: #1d4ed8; }
+    .download-button { display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px; border: 1px solid #c7d2fe; border-radius: 5px; color: #4338ca; font-size: .73rem; font-weight: 600; text-decoration: none; }
+    .download-button:hover { background: #eef2ff; }
+    .history-breakdown { margin-top: 5px; font-weight: 400; }
+    .history-breakdown summary { width: fit-content; color: #4338ca; font-size: .68rem; cursor: pointer; }
+    .history-breakdown-content { display: grid; min-width: 220px; gap: 3px; padding: 8px 0; }
+    .history-breakdown-content p { display: flex; justify-content: space-between; gap: 12px; margin: 0; color: #64748b; font-size: .68rem; }
+    .history-breakdown-content p b { flex-shrink: 0; color: #334155; }
+    .history-breakdown-content small { display: block; margin-top: 2px; color: #94a3b8; white-space: normal; }
+    .history-breakdown-content .history-remarks { display: block; padding-top: 4px; color: #4338ca; white-space: normal; }
+    .tax-year-filter { display: flex; align-items: center; gap: 8px; color: #64748b; font-size: .75rem; }
+    .tax-year-filter select { width: 145px; }
+    .tax-document-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .tax-document-row { display: flex; align-items: center; gap: 11px; min-width: 0; padding: 12px; border: 1px solid #e2e8f0; border-radius: 7px; }
+    .tax-document-icon { display: grid; flex: 0 0 34px; width: 34px; height: 34px; place-items: center; border-radius: 6px; background: #eef2ff; color: #4f46e5; }
+    .tax-document-row > div { display: grid; min-width: 0; gap: 3px; }
+    .tax-document-row strong { overflow: hidden; color: #334155; font-size: .77rem; text-overflow: ellipsis; white-space: nowrap; }
+    .tax-document-row small, .document-unavailable { color: #94a3b8; font-size: .69rem; }
+    .tax-document-row > a, .tax-document-row > span:last-child { margin-left: auto; flex-shrink: 0; }
+    @media (max-width: 900px) { .payroll-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } .history-heading { align-items: flex-start; flex-direction: column; } }
+    @media (max-width: 600px) { .breakdown-columns, .tax-document-grid { grid-template-columns: 1fr; } .payroll-section { padding: 15px; } .history-filters { width: 100%; } .history-filters select, .history-filters input { flex: 1; min-width: 115px; } .tax-year-filter { width: 100%; } .tax-year-filter select { flex: 1; } }
 </style>
 {% endblock %}

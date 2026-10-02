@@ -2,13 +2,14 @@ import datetime
 import io
 import shutil
 import tempfile
+from decimal import Decimal
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from PIL import Image
 from openpyxl import load_workbook
 from django.utils import timezone
-from core.models import Attendance, AttendanceCorrectionRequest, CompanyHoliday, EmployeeDocument, LeaveApplication, Project, ProjectAssignment, ProjectMilestone, ProjectResource, ProjectTask, ProjectTechnology, User, WorkLog
+from core.models import Attendance, AttendanceCorrectionRequest, CompanyHoliday, EmployeeDocument, LeaveApplication, PayrollTaxDocument, Project, ProjectAssignment, ProjectMilestone, ProjectResource, ProjectTask, ProjectTechnology, Salary, SalaryComponent, User, WorkLog
 
 class SalaryDueDateTestCase(TestCase):
     def test_standard_due_date(self):
@@ -50,6 +51,125 @@ class SalaryDueDateTestCase(TestCase):
         # Reference date: Dec 31, 2025, and we check candidate month 12 overflow to candidate month 1 (Jan 31).
         due = emp.get_next_salary_due_date(reference_date=datetime.date(2026, 1, 1))
         self.assertEqual(due, datetime.date(2026, 1, 31))
+
+
+class EmployeeSalaryPayrollTestCase(TestCase):
+    def setUp(self):
+        self.employee = User.objects.create_user(
+            username='payroll-user',
+            first_name='Pat',
+            last_name='Employee',
+            role='employee',
+            department='Finance',
+            designation='Analyst',
+            bank_account_number='1234567890',
+            tax_id='ABCDE1234F',
+        )
+        self.other_employee = User.objects.create_user(username='other-payroll-user', role='employee')
+        self.client.force_login(self.employee)
+
+    def create_salary(self, *, status='paid', year=None, month=None):
+        today = timezone.localdate()
+        return Salary.objects.create(
+            employee=self.employee,
+            year=year or today.year,
+            month=month or today.month,
+            amount=Decimal('7500.00'),
+            status=status,
+            paid_date=today if status == 'paid' else None,
+            remarks='Processed by payroll.',
+        )
+
+    def test_salary_page_shows_itemized_totals_and_filters(self):
+        salary = self.create_salary(status='processing')
+        SalaryComponent.objects.create(salary=salary, component_type='earning', name='Basic', amount='5000.00')
+        SalaryComponent.objects.create(salary=salary, component_type='earning', name='HRA', amount='2000.00')
+        SalaryComponent.objects.create(
+            salary=salary,
+            component_type='deduction',
+            name='LWP',
+            amount='250.00',
+            formula='1 day × daily rate',
+            dates=['2026-10-01'],
+            remarks='One unpaid leave day',
+        )
+        response = self.client.get(reverse('employee_salary'), {'year': str(salary.year), 'quarter': '4', 'q': 'LWP'})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['gross_salary'], Decimal('7000.00'))
+        self.assertEqual(response.context['total_deductions'], Decimal('250.00'))
+        self.assertEqual(response.context['net_payable'], Decimal('6750.00'))
+        self.assertEqual(len(response.context['salary_rows']), 1)
+        self.assertContains(response, 'LWP')
+        self.assertContains(response, '1 day × daily rate')
+        self.assertContains(response, 'Tax &amp; Form 16 Documents')
+
+    def test_paid_salary_download_generates_pdf_with_payroll_details(self):
+        salary = self.create_salary()
+        SalaryComponent.objects.create(salary=salary, component_type='earning', name='Basic', amount='7500.00')
+        SalaryComponent.objects.create(
+            salary=salary,
+            component_type='deduction',
+            name='TDS',
+            amount='500.00',
+            formula='Monthly withholding',
+        )
+        Attendance.objects.create(
+            employee=self.employee,
+            date=datetime.date(salary.year, salary.month, 2),
+            status='present',
+            check_in=datetime.time(9, 0),
+            check_out=datetime.time(17, 0),
+        )
+
+        response = self.client.get(reverse('employee_payslip_download', args=[salary.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'application/pdf')
+        self.assertIn('.pdf', response['Content-Disposition'])
+        pdf_bytes = b''.join(response.streaming_content)
+        self.assertTrue(pdf_bytes.startswith(b'%PDF'))
+        self.assertGreater(len(pdf_bytes), 1000)
+        response.close()
+
+    def test_unpaid_and_other_employee_payslips_are_not_downloadable(self):
+        pending_salary = self.create_salary(status='pending')
+        other_salary = Salary.objects.create(
+            employee=self.other_employee,
+            year=pending_salary.year,
+            month=pending_salary.month,
+            amount='4000.00',
+            status='paid',
+        )
+
+        pending_response = self.client.get(reverse('employee_payslip_download', args=[pending_salary.pk]))
+        other_response = self.client.get(reverse('employee_payslip_download', args=[other_salary.pk]))
+
+        self.assertEqual(pending_response.status_code, 404)
+        self.assertEqual(other_response.status_code, 404)
+
+    def test_tax_document_filter_and_download_are_employee_scoped(self):
+        media_root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, media_root, ignore_errors=True)
+        with override_settings(MEDIA_ROOT=media_root):
+            document = PayrollTaxDocument.objects.create(
+                employee=self.employee,
+                financial_year='2025-2026',
+                document_type='form16_a',
+                file=SimpleUploadedFile('form16-part-a.pdf', b'%PDF-1.4 sample', content_type='application/pdf'),
+            )
+            page = self.client.get(reverse('employee_salary'), {'financial_year': '2025-2026'})
+            response = self.client.get(reverse('employee_tax_document_download', args=[document.pk]))
+
+            self.assertContains(page, 'FY 2025-2026')
+            self.assertContains(page, 'Download')
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(b''.join(response.streaming_content), b'%PDF-1.4 sample')
+            response.close()
+
+            self.client.force_login(self.other_employee)
+            denied = self.client.get(reverse('employee_tax_document_download', args=[document.pk]))
+            self.assertEqual(denied.status_code, 404)
 
 
 class EmployeeProfileTestCase(TestCase):

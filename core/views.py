@@ -1,8 +1,10 @@
 import datetime
 import calendar
 import csv
+import calendar
 import ipaddress
 import mimetypes
+from html import escape
 from collections import defaultdict
 from decimal import Decimal
 from io import BytesIO
@@ -17,12 +19,19 @@ from django.http import FileResponse, Http404, HttpResponse
 from django.core.paginator import Paginator
 from django.db.models import Q
 from django.contrib import messages
+from django.db.models import Q, Sum
 from django.utils import timezone
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import mm
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 from .forms import EmployeeProfileForm
-from .models import User, Attendance, AttendanceCorrectionRequest, CompanyHoliday, WorkLog, LeaveApplication, Salary, Project, ProjectAssignment, EmployeeDocument
+from .models import User, Attendance, AttendanceCorrectionRequest, CompanyHoliday, WorkLog, LeaveApplication, Salary, SalaryComponent, PayrollTaxDocument, Project, ProjectAssignment, EmployeeDocument
 from .permissions import AdminRoleRequiredMixin, EmployeeRoleRequiredMixin
 
 def get_leave_days_in_range(employee, start_limit, end_limit):
@@ -1060,6 +1069,240 @@ class EmployeePasswordChangeView(EmployeeRoleRequiredMixin, PasswordChangeView):
     success_url = reverse_lazy('employee_profile')
 
 
+def get_salary_breakdown(salary):
+    components = list(salary.components.all())
+    earnings = [component for component in components if component.component_type == 'earning']
+    deductions = [component for component in components if component.component_type == 'deduction']
+    if components:
+        gross = sum((component.amount for component in earnings), Decimal('0'))
+        total_deductions = sum((component.amount for component in deductions), Decimal('0'))
+        net_pay = gross - total_deductions
+    else:
+        gross = salary.amount
+        total_deductions = Decimal('0')
+        net_pay = salary.amount
+        earnings = [None]
+    return {
+        'salary': salary,
+        'earnings': earnings,
+        'deductions': deductions,
+        'gross': gross,
+        'total_deductions': total_deductions,
+        'net_pay': net_pay,
+    }
+
+
+def get_salary_attendance_summary(salary, deductions):
+    month_start = datetime.date(salary.year, salary.month, 1)
+    month_end = datetime.date(salary.year, salary.month, calendar.monthrange(salary.year, salary.month)[1])
+    attendances = Attendance.objects.filter(
+        employee=salary.employee,
+        date__range=(month_start, month_end),
+    )
+    worked_days = attendances.filter(status__in=['present', 'half_day']).count()
+    leaves_taken = Decimal('0')
+    leave_applications = LeaveApplication.objects.filter(
+        employee=salary.employee,
+        status='approved',
+        start_date__lte=month_end,
+        end_date__gte=month_start,
+    )
+    holidays = set(CompanyHoliday.objects.filter(date__range=(month_start, month_end)).values_list('date', flat=True))
+    for leave in leave_applications:
+        overlap_start = max(leave.start_date, month_start)
+        overlap_end = min(leave.end_date, month_end)
+        leaves_taken += get_leave_units(overlap_start, overlap_end, leave.half_day_session, holidays)
+
+    unpaid_dates = set()
+    for component in deductions:
+        if 'lwp' in component.name.lower() or 'unpaid' in component.name.lower():
+            for date_value in component.dates:
+                try:
+                    unpaid_dates.add(datetime.date.fromisoformat(str(date_value)[:10]))
+                except ValueError:
+                    continue
+    return {
+        'total_days': calendar.monthrange(salary.year, salary.month)[1],
+        'days_worked': worked_days,
+        'leaves_taken': leaves_taken,
+        'lwp_dates': sorted(date_value for date_value in unpaid_dates if month_start <= date_value <= month_end),
+    }
+
+
+def build_salary_payslip(salary, breakdown, attendance_summary):
+    output = BytesIO()
+    document = SimpleDocTemplate(
+        output,
+        pagesize=A4,
+        rightMargin=16 * mm,
+        leftMargin=16 * mm,
+        topMargin=14 * mm,
+        bottomMargin=14 * mm,
+        title=f'Payslip {salary.year}-{salary.month:02d}',
+    )
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(name='PayrollSmall', parent=styles['BodyText'], fontSize=8, leading=11, textColor=colors.HexColor('#475569')))
+    styles.add(ParagraphStyle(name='PayrollHeading', parent=styles['Heading2'], fontSize=11, leading=14, textColor=colors.HexColor('#172554')))
+    styles.add(ParagraphStyle(name='PayrollCenter', parent=styles['BodyText'], alignment=TA_CENTER, fontSize=8, leading=11))
+    story = []
+    logo = Table([[Paragraph('<b>A</b>', styles['Title']), Paragraph('<b>ANTIGRAVITY HRMS</b><br/><font size="8">PAYROLL STATEMENT</font>', styles['Heading2'])]], colWidths=[18 * mm, 145 * mm])
+    logo.setStyle(TableStyle([
+        ('TEXTCOLOR', (0, 0), (0, 0), colors.white),
+        ('BACKGROUND', (0, 0), (0, 0), colors.HexColor('#4f46e5')),
+        ('ALIGN', (0, 0), (0, 0), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('LEFTPADDING', (1, 0), (1, 0), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+    ]))
+    story.extend([logo, Spacer(1, 7 * mm), Paragraph(f'{calendar.month_name[salary.month]} {salary.year} Payslip', styles['Title']), Spacer(1, 4 * mm)])
+
+    employee = salary.employee
+    employee_rows = [
+        ['Employee', employee.get_full_name() or employee.username, 'Employee ID', str(employee.pk)],
+        ['Designation', employee.designation or '-', 'Department', employee.department or '-'],
+        ['Bank Account', employee.bank_account_number or '-', 'PAN', employee.tax_id or '-'],
+        ['Pay Period', f'{month_start_label(salary)}', 'Paid On', salary.paid_date.strftime('%b %d, %Y') if salary.paid_date else '-'],
+    ]
+    employee_table = Table(employee_rows, colWidths=[25 * mm, 57 * mm, 25 * mm, 58 * mm])
+    employee_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#f1f5f9')),
+        ('BACKGROUND', (2, 0), (2, -1), colors.HexColor('#f1f5f9')),
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('FONTNAME', (2, 0), (2, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('GRID', (0, 0), (-1, -1), .4, colors.HexColor('#dbe3ed')),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+    ]))
+    story.extend([employee_table, Spacer(1, 5 * mm), Paragraph('Attendance Summary', styles['PayrollHeading'])])
+    lwp_dates = ', '.join(date_value.strftime('%b %d') for date_value in attendance_summary['lwp_dates']) or '-'
+    attendance_rows = [
+        ['Calendar Days', 'Days Worked', 'Leaves Taken', 'LWP Days'],
+        [
+            str(attendance_summary['total_days']),
+            str(attendance_summary['days_worked']),
+            f"{attendance_summary['leaves_taken']:g}",
+            f"{len(attendance_summary['lwp_dates'])} ({lwp_dates})",
+        ],
+    ]
+    attendance_table = Table(attendance_rows, colWidths=[41 * mm] * 4)
+    attendance_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#eef2ff')),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('GRID', (0, 0), (-1, -1), .4, colors.HexColor('#dbe3ed')),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+    ]))
+    story.extend([attendance_table, Spacer(1, 5 * mm)])
+
+    earnings_rows = [['Earnings', 'Amount']]
+    if breakdown['salary'].components.exists():
+        for component in breakdown['earnings']:
+            earnings_rows.append([Paragraph(escape(component.name), styles['PayrollSmall']), f'{component.amount:,.2f}'])
+    else:
+        earnings_rows.append(['Recorded Pay', f"{breakdown['gross']:,.2f}"])
+    earnings_rows.append(['Gross Salary', f"{breakdown['gross']:,.2f}"])
+
+    deduction_rows = [['Deductions', 'Amount']]
+    for component in breakdown['deductions']:
+        details = []
+        if component.formula:
+            details.append(escape(component.formula))
+        if component.dates:
+            details.append('Dates: ' + ', '.join(escape(str(date_value)) for date_value in component.dates))
+        if component.remarks:
+            details.append(escape(component.remarks))
+        label = escape(component.name)
+        if details:
+            label += '<br/><font size="7" color="#64748b">' + '<br/>'.join(details) + '</font>'
+        deduction_rows.append([Paragraph(label, styles['PayrollSmall']), f'{component.amount:,.2f}'])
+    if not breakdown['deductions']:
+        deduction_rows.append(['No deductions', '0.00'])
+    deduction_rows.append(['Total Deductions', f"{breakdown['total_deductions']:,.2f}"])
+
+    side_by_side = Table([[Table(earnings_rows, colWidths=[51 * mm, 25 * mm]), Table(deduction_rows, colWidths=[51 * mm, 25 * mm])]], colWidths=[82 * mm, 82 * mm])
+    side_by_side.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'TOP'), ('LEFTPADDING', (0, 0), (-1, -1), 0), ('RIGHTPADDING', (0, 0), (-1, -1), 4)]))
+    inner_style = TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#172554')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#eef2ff')),
+        ('GRID', (0, 0), (-1, -1), .4, colors.HexColor('#dbe3ed')),
+        ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('ALIGN', (1, 1), (1, -1), 'RIGHT'),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+    ])
+    side_by_side._cellvalues[0][0].setStyle(inner_style)
+    side_by_side._cellvalues[0][1].setStyle(inner_style)
+    story.extend([Paragraph('Salary Breakdown', styles['PayrollHeading']), side_by_side, Spacer(1, 5 * mm)])
+    net_table = Table([['NET PAYABLE', f"{breakdown['net_pay']:,.2f}"]], colWidths=[130 * mm, 34 * mm])
+    net_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#e0e7ff')),
+        ('TEXTCOLOR', (0, 0), (-1, -1), colors.HexColor('#312e81')),
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 11),
+        ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
+        ('TOPPADDING', (0, 0), (-1, -1), 9),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 9),
+    ]))
+    story.extend([net_table, Spacer(1, 10 * mm)])
+    if salary.remarks:
+        story.extend([Paragraph('Payroll Remarks', styles['PayrollHeading']), Paragraph(escape(salary.remarks), styles['PayrollSmall']), Spacer(1, 8 * mm)])
+    stamp = Table([[Paragraph('<b>PAYROLL VERIFIED</b><br/>Digitally generated statement', styles['PayrollCenter']), Paragraph('<b>Authorized Signatory</b><br/>Antigravity HRMS', styles['PayrollCenter'])]], colWidths=[82 * mm, 82 * mm])
+    stamp.setStyle(TableStyle([
+        ('TEXTCOLOR', (0, 0), (0, 0), colors.HexColor('#047857')),
+        ('BOX', (0, 0), (0, 0), 1, colors.HexColor('#10b981')),
+        ('BOX', (1, 0), (1, 0), .6, colors.HexColor('#cbd5e1')),
+        ('TOPPADDING', (0, 0), (-1, -1), 9),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 9),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+    story.append(stamp)
+    document.build(story)
+    output.seek(0)
+    return output
+
+
+def month_start_label(salary):
+    return f'{calendar.month_name[salary.month]} 1 - {calendar.monthrange(salary.year, salary.month)[1]}, {salary.year}'
+
+
+class EmployeePayslipDownloadView(EmployeeRoleRequiredMixin, View):
+    def get(self, request, pk):
+        salary = get_object_or_404(
+            Salary.objects.prefetch_related('components'),
+            pk=pk,
+            employee=request.user,
+            status='paid',
+        )
+        breakdown = get_salary_breakdown(salary)
+        attendance_summary = get_salary_attendance_summary(salary, breakdown['deductions'])
+        return FileResponse(
+            build_salary_payslip(salary, breakdown, attendance_summary),
+            as_attachment=True,
+            filename=f'payslip_{salary.year}_{salary.month:02d}.pdf',
+            content_type='application/pdf',
+        )
+
+
+class EmployeePayrollTaxDocumentView(EmployeeRoleRequiredMixin, View):
+    def get(self, request, pk):
+        document = get_object_or_404(PayrollTaxDocument, pk=pk, employee=request.user)
+        return FileResponse(
+            document.file.open('rb'),
+            as_attachment=True,
+            filename=Path(document.file.name).name,
+            content_type='application/pdf',
+        )
+
+
 class EmployeeSalaryView(EmployeeRoleRequiredMixin, TemplateView):
     """
     Displays current month's salary details and payment history.
@@ -1070,32 +1313,106 @@ class EmployeeSalaryView(EmployeeRoleRequiredMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         user = self.request.user
         today = timezone.localdate()
-        
-        # Current month salary record
-        current_salary = Salary.objects.filter(
+
+        all_salary_records = Salary.objects.filter(employee=user).prefetch_related('components')
+        selected_year = self.request.GET.get('year', '').strip()
+        selected_quarter = self.request.GET.get('quarter', '').strip()
+        search_query = self.request.GET.get('q', '').strip()[:80]
+        try:
+            selected_year_value = int(selected_year) if selected_year else None
+        except ValueError:
+            selected_year_value = None
+        year_options = sorted(set(all_salary_records.values_list('year', flat=True)), reverse=True)
+        salary_history = all_salary_records.order_by('-year', '-month')
+        if selected_year_value and selected_year_value in year_options:
+            salary_history = salary_history.filter(year=selected_year_value)
+        else:
+            selected_year = ''
+        quarter_months = {
+            '1': (1, 3),
+            '2': (4, 6),
+            '3': (7, 9),
+            '4': (10, 12),
+        }
+        if selected_quarter in quarter_months:
+            first_month, last_month = quarter_months[selected_quarter]
+            salary_history = salary_history.filter(month__gte=first_month, month__lte=last_month)
+        else:
+            selected_quarter = ''
+        if search_query:
+            search_filter = Q(status__icontains=search_query) | Q(components__name__icontains=search_query)
+            if search_query.isdigit():
+                search_filter |= Q(year=int(search_query))
+                month_value = int(search_query)
+                if 1 <= month_value <= 12:
+                    search_filter |= Q(month=month_value)
+            else:
+                matching_months = [month for month in range(1, 13) if search_query.lower() in calendar.month_name[month].lower()]
+                if matching_months:
+                    search_filter |= Q(month__in=matching_months)
+            salary_history = salary_history.filter(search_filter).distinct()
+
+        salary_rows = []
+        for salary in salary_history:
+            salary_rows.append(get_salary_breakdown(salary))
+
+        current_salary = all_salary_records.filter(
             employee=user,
             month=today.month,
             year=today.year
         ).first()
-        
         if current_salary:
             current_status = current_salary.status.title()
-            current_amount = current_salary.amount
+            current_breakdown = get_salary_breakdown(current_salary)
         else:
             current_status = "Pending"
-            current_amount = user.salary_amount
-            
-        # Next salary due date
+            current_breakdown = {
+                'gross': user.salary_amount,
+                'total_deductions': Decimal('0'),
+                'net_pay': user.salary_amount,
+                'earnings': [],
+                'deductions': [],
+            }
+
         next_salary_date = user.get_next_salary_due_date()
-        
-        # Salary history table
-        salary_history = Salary.objects.filter(employee=user).order_by('-year', '-month')
-        
+        current_financial_year_start = today.year if today.month >= 4 else today.year - 1
+        financial_year_options = [
+            f'{year}-{year + 1}' for year in range(current_financial_year_start, current_financial_year_start - 5, -1)
+        ]
+        financial_year_options = sorted(set(financial_year_options) | set(
+            PayrollTaxDocument.objects.filter(employee=user).values_list('financial_year', flat=True)
+        ), reverse=True)
+        selected_financial_year = self.request.GET.get('financial_year', '').strip()
+        if selected_financial_year not in financial_year_options:
+            selected_financial_year = financial_year_options[0] if financial_year_options else ''
+        tax_documents = PayrollTaxDocument.objects.filter(
+            employee=user,
+            financial_year=selected_financial_year,
+        ) if selected_financial_year else PayrollTaxDocument.objects.none()
+        tax_documents_by_type = {document.document_type: document for document in tax_documents}
+        tax_document_rows = [
+            {'key': key, 'label': label, 'document': tax_documents_by_type.get(key)}
+            for key, label in PayrollTaxDocument.DOCUMENT_TYPES
+        ]
+
         context.update({
             'current_status': current_status,
-            'current_amount': current_amount,
+            'gross_salary': current_breakdown['gross'],
+            'total_deductions': current_breakdown['total_deductions'],
+            'net_payable': current_breakdown['net_pay'],
+            'current_earnings': current_breakdown['earnings'],
+            'current_deductions': current_breakdown['deductions'],
+            'current_payroll_remarks': current_salary.remarks if current_salary else '',
             'next_salary_date': next_salary_date,
-            'salary_history': salary_history,
+            'salary_rows': salary_rows,
+            'year_options': year_options,
+            'selected_year': selected_year,
+            'selected_quarter': selected_quarter,
+            'search_query': search_query,
+            'financial_year_options': financial_year_options,
+            'selected_financial_year': selected_financial_year,
+            'tax_documents': tax_documents,
+            'tax_document_rows': tax_document_rows,
         })
         return context
 

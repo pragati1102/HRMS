@@ -23,6 +23,8 @@ from .views import (
     EmployeeDocumentDownloadView,
     EmployeePasswordChangeView,
     EmployeeSalaryView,
+    EmployeePayslipDownloadView,
+    EmployeePayrollTaxDocumentView,
     EmployeeCalendarView,
     EmployeeProjectsView,
 )
@@ -55,6 +57,8 @@ urlpatterns = [
     path('profile/password/', EmployeePasswordChangeView.as_view(), name='employee_password_change'),
     path('profile/documents/<int:pk>/download/', EmployeeDocumentDownloadView.as_view(), name='employee_document_download'),
     path('salary/', EmployeeSalaryView.as_view(), name='employee_salary'),
+    path('salary/payslip/<int:pk>/', EmployeePayslipDownloadView.as_view(), name='employee_payslip_download'),
+    path('salary/tax-documents/<int:pk>/', EmployeePayrollTaxDocumentView.as_view(), name='employee_tax_document_download'),
     path('calendar/', EmployeeCalendarView.as_view(), name='employee_calendar'),
     path('projects/', EmployeeProjectsView.as_view(), name='employee_projects'),
 ]
