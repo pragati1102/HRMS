@@ -21,7 +21,12 @@
     <!-- Profile Info Card -->
     <div class="col-lg-6">
         <div class="glass-card h-100">
-            <h5 class="fw-bold mb-4"><i class="bi bi-person-lines-fill text-indigo me-2"></i> Profile Information</h5>
+            <div class="d-flex align-items-center gap-3 mb-4">
+                <div class="rounded-circle bg-light border d-flex align-items-center justify-content-center overflow-hidden" style="width: 56px; height: 56px; flex: 0 0 56px;">
+                    {% with avatar_user=employee avatar_emoji_size='1.8rem' %}{% include 'core/partials/avatar.html' %}{% endwith %}
+                </div>
+                <h5 class="fw-bold mb-0"><i class="bi bi-person-lines-fill text-indigo me-2"></i> Profile Information</h5>
+            </div>
             <div class="row g-3">
                 <div class="col-sm-6">
                     <span class="text-secondary small d-block">Full Name</span>
@@ -192,6 +197,7 @@
                     <button type="submit" class="btn btn-sm btn-premium py-1"><i class="bi bi-funnel-fill"></i></button>
                     <a href="{% url 'employee_detail' employee.id %}" class="btn btn-sm btn-outline-premium py-1"><i class="bi bi-arrow-clockwise"></i></a>
                 </form>
+                <a href="{% url 'admin_employee_work_logs_export' employee.id %}" class="btn btn-sm btn-premium py-1"><i class="bi bi-download me-1"></i> Export Excel</a>
             </div>
             
             <div class="table-responsive" style="max-height: 350px; overflow-y: auto;">

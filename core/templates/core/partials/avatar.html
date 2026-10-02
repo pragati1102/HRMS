@@ -1,0 +1,10 @@
+{% if avatar_user.profile_photo %}
+    <img src="{% if avatar_user.id == request.user.id %}{% url 'employee_profile_photo' %}{% else %}{% url 'employee_photo_by_id' avatar_user.id %}{% endif %}"
+         alt="{{ avatar_user.get_full_name|default:avatar_user.username }} profile photo"
+         class="rounded-circle"
+         style="width: 100%; height: 100%; object-fit: cover;">
+{% else %}
+    <span role="img" aria-label="{{ avatar_user.get_full_name|default:avatar_user.username }} avatar" style="font-size: {{ avatar_emoji_size }}; line-height: 1;">
+        {% if avatar_user.gender == 'male' %}👨‍💼{% elif avatar_user.gender == 'female' %}👩‍💼{% else %}🧑‍💼{% endif %}
+    </span>
+{% endif %}

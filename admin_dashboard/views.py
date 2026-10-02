@@ -1,9 +1,12 @@
 import datetime
+from pathlib import Path
 from django.views.generic import ListView, DetailView, TemplateView
 from django.db.models import Q, Count
 from django.contrib.auth.views import LoginView
 from django.contrib.auth import logout
-from django.shortcuts import redirect
+from django.contrib import messages
+from django.http import FileResponse, Http404
+from django.shortcuts import redirect, render, get_object_or_404
 from django.views import View
 from django.utils import timezone
 from core.models import User, Attendance, WorkLog, LeaveApplication, Salary
@@ -181,11 +184,46 @@ class EmployeeDetailView(AdminRoleRequiredMixin, DetailView):
         return context
 
 
-class LeaveApprovalsView(AdminRoleRequiredMixin, TemplateView):
+class LeaveApprovalsView(AdminRoleRequiredMixin, View):
     """
-    Page listing all pending leaves for approval (Admin only).
+    Lists pending leave requests and records the admin's decision and feedback.
     """
     template_name = 'admin_dashboard/leave_approvals.html'
+
+    def get(self, request):
+        pending_applications = LeaveApplication.objects.filter(status='pending').select_related(
+            'employee', 'employee__manager', 'handover_contact'
+        ).order_by('start_date', 'applied_on')
+        return render(request, self.template_name, {'pending_applications': pending_applications})
+
+    def post(self, request):
+        application = get_object_or_404(LeaveApplication, pk=request.POST.get('application_id'), status='pending')
+        action = request.POST.get('action')
+        approval_notes = request.POST.get('approval_notes', '').strip()
+        if action not in {'approve', 'reject'}:
+            messages.error(request, 'Choose approve or reject for this leave request.')
+        elif action == 'reject' and not approval_notes:
+            messages.error(request, 'Add a reason when rejecting a leave request.')
+        else:
+            application.status = 'approved' if action == 'approve' else 'rejected'
+            application.approved_by = request.user
+            application.approval_notes = approval_notes
+            application.save(update_fields=['status', 'approved_by', 'approval_notes'])
+            messages.success(request, 'Leave request reviewed successfully.')
+        return redirect('leave_approvals')
+
+
+class AdminLeaveDocumentView(AdminRoleRequiredMixin, View):
+    def get(self, request, pk):
+        application = get_object_or_404(LeaveApplication, pk=pk)
+        if not application.supporting_document:
+            raise Http404
+        return FileResponse(
+            application.supporting_document.open('rb'),
+            as_attachment=True,
+            filename=Path(application.supporting_document.name).name,
+            content_type='application/octet-stream',
+        )
 
 
 class AdminLoginView(LoginView):

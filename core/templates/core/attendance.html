@@ -1,130 +1,196 @@
 {% extends 'admin_dashboard/base.html' %}
 
-{% block title %}Login Time | HRMS Portal{% endblock %}
+{% block title %}Attendance | HRMS Portal{% endblock %}
 {% block active_attendance %}active{% endblock %}
 
 {% block header_content %}
-<h1>Login Time</h1>
-<p class="text-muted mb-0">Mark your daily check-in / check-out and review your attendance history.</p>
+<h1>Attendance</h1>
+<p class="text-muted mb-0">Track your workday, breaks, and attendance history.</p>
 {% endblock %}
 
 {% block content %}
 <div class="row g-4 mb-4">
-    <!-- Attendance Action Card -->
-    <div class="col-md-4">
-        <div class="glass-card h-100 text-center d-flex flex-column justify-content-center align-items-center">
-            <h5 class="fw-bold mb-3 text-start w-100"><i class="bi bi-clock-history text-indigo me-2"></i> Today's Attendance</h5>
+    <div class="col-xl-4">
+        <section class="glass-card h-100">
+            <h2 class="h5 fw-bold mb-4"><i class="bi bi-clock-history text-indigo me-2"></i> Today's Attendance</h2>
+            <div class="text-center mb-4">
+                <div id="digital-clock" class="display-6 fw-bold text-dark" aria-live="off">{{ current_time|date:"h:i:s A" }}</div>
+                <div class="small text-secondary">{{ today|date:"l, F j, Y" }}</div>
+            </div>
 
-            {% if not today_attendance %}
-                <div class="text-muted mb-3 fs-5"><i class="bi bi-geo-alt-fill me-1 text-danger"></i> Not Checked In</div>
-                <form action="{% url 'employee_check_in' %}" method="POST" class="w-100">
+            {% if not today_attendance or not today_attendance.check_in %}
+                <div class="text-secondary mb-3 text-center"><i class="bi bi-record-circle text-danger me-1"></i> Not Checked In</div>
+                <form action="{% url 'employee_check_in' %}" method="POST">
                     {% csrf_token %}
+                    <label for="location_mode" class="form-label small fw-semibold">Work location</label>
+                    <select name="location_mode" id="location_mode" class="form-select mb-3" required>
+                        <option value="">Choose Office or Remote</option>
+                        <option value="office">Office</option>
+                        <option value="remote">Remote / Work from Home</option>
+                    </select>
                     <button type="submit" class="btn btn-premium w-100 py-2">
                         <i class="bi bi-box-arrow-in-right me-1"></i> Daily Check In
                     </button>
                 </form>
             {% elif not today_attendance.check_out %}
-                <div class="text-success mb-3 fs-5">
-                    <i class="bi bi-check-circle-fill me-1"></i> Checked In at {{ today_attendance.check_in|time:"h:i A" }}
+                <div class="text-success text-center mb-2"><i class="bi bi-check-circle-fill me-1"></i> Checked in at {{ today_attendance.check_in|time:"h:i A" }}</div>
+                <div class="text-center small text-secondary mb-3">
+                    <i class="bi bi-geo-alt-fill text-danger me-1"></i>{{ today_attendance.get_location_mode_display|default:today_attendance.location_mode|title }}
+                    {% if today_attendance.check_in_ip %}<span class="mx-1">·</span>{{ today_attendance.check_in_ip }}{% endif %}
                 </div>
-                <form action="{% url 'employee_check_out' %}" method="POST" class="w-100">
+                <div class="rounded-3 bg-light border text-center p-3 mb-3">
+                    <div class="small text-secondary">{% if today_attendance.break_started_at %}Break in progress{% else %}Logged Hours{% endif %}</div>
+                    <div id="work-timer" class="h3 fw-bold mb-0 text-indigo" data-elapsed-seconds="{{ current_work_seconds }}">{{ current_work_time }}</div>
+                </div>
+                <form action="{% url 'employee_attendance_break' %}" method="POST" class="mb-2">
                     {% csrf_token %}
-                    <button type="submit" class="btn btn-danger w-100 py-2" style="box-shadow: 0 4px 12px rgba(220, 53, 69, 0.2);">
-                        <i class="bi bi-box-arrow-left me-1"></i> Check Out
+                    <button type="submit" class="btn btn-outline-premium w-100 py-2">
+                        {% if today_attendance.break_started_at %}<i class="bi bi-play-fill me-1"></i> Resume Work{% else %}<i class="bi bi-cup-hot me-1"></i> Start Break{% endif %}
                     </button>
                 </form>
+                <form action="{% url 'employee_check_out' %}" method="POST">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger w-100 py-2"><i class="bi bi-box-arrow-left me-1"></i> Check Out</button>
+                </form>
             {% else %}
-                <div class="text-primary mb-2 fs-5"><i class="bi bi-check2-all me-1"></i> Day Completed</div>
-                <div class="text-muted small" style="font-size: 0.85rem;">
+                <div class="text-primary text-center mb-2 fs-5"><i class="bi bi-check2-all me-1"></i> Day Completed</div>
+                <div class="text-muted small text-center mb-3">
                     Check In: <strong>{{ today_attendance.check_in|time:"h:i A" }}</strong><br>
                     Check Out: <strong>{{ today_attendance.check_out|time:"h:i A" }}</strong>
                 </div>
+                <div class="rounded-3 bg-light border text-center p-3">
+                    <div class="small text-secondary">Total Worked</div>
+                    <div class="h3 fw-bold mb-0 text-indigo">{{ current_work_time }}</div>
+                </div>
             {% endif %}
-        </div>
+        </section>
     </div>
 
-    <!-- Monthly Summary -->
-    <div class="col-md-8">
-        <div class="glass-card h-100">
-            <h5 class="fw-bold mb-3"><i class="bi bi-bar-chart-fill text-indigo me-2"></i> Monthly Summary ({{ selected_month }}/{{ selected_year }})</h5>
+    <div class="col-xl-8">
+        <section class="glass-card h-100">
+            <h2 class="h5 fw-bold mb-3"><i class="bi bi-bar-chart-fill text-indigo me-2"></i> Monthly Summary ({{ selected_month }}/{{ selected_year }})</h2>
             <div class="row g-3 text-center">
-                <div class="col-4">
-                    <div class="p-3 rounded-3 bg-light border">
-                        <div class="fs-3 fw-bold text-success">{{ total_present }}</div>
-                        <div class="small text-secondary text-uppercase" style="font-size: 0.7rem;">Present</div>
-                    </div>
-                </div>
-                <div class="col-4">
-                    <div class="p-3 rounded-3 bg-light border">
-                        <div class="fs-3 fw-bold text-indigo">{{ total_half_days }}</div>
-                        <div class="small text-secondary text-uppercase" style="font-size: 0.7rem;">Half Days</div>
-                    </div>
-                </div>
-                <div class="col-4">
-                    <div class="p-3 rounded-3 bg-light border">
-                        <div class="fs-3 fw-bold text-danger">{{ total_absent }}</div>
-                        <div class="small text-secondary text-uppercase" style="font-size: 0.7rem;">Absent</div>
-                    </div>
-                </div>
+                <div class="col-6 col-md-4 col-xl-3"><div class="p-3 rounded-3 bg-light border h-100"><div class="fs-4 fw-bold text-success">{{ total_present }}</div><div class="small text-secondary text-uppercase">Present</div></div></div>
+                <div class="col-6 col-md-4 col-xl-3"><div class="p-3 rounded-3 bg-light border h-100"><div class="fs-4 fw-bold text-warning">{{ total_half_days }}</div><div class="small text-secondary text-uppercase">Half Days</div></div></div>
+                <div class="col-6 col-md-4 col-xl-3"><div class="p-3 rounded-3 bg-light border h-100"><div class="fs-4 fw-bold text-danger">{{ total_absent }}</div><div class="small text-secondary text-uppercase">Absent</div></div></div>
+                <div class="col-6 col-md-4 col-xl-3"><div class="p-3 rounded-3 bg-light border h-100"><div class="fs-5 fw-bold text-indigo">{{ total_work_time }}</div><div class="small text-secondary text-uppercase">Total Working Hours</div></div></div>
+                <div class="col-6 col-md-4 col-xl-3"><div class="p-3 rounded-3 bg-light border h-100"><div class="fs-5 fw-bold text-success">{{ overtime_time }}</div><div class="small text-secondary text-uppercase">Overtime (&gt; 8h/day)</div></div></div>
+                <div class="col-6 col-md-4 col-xl-3"><div class="p-3 rounded-3 bg-light border h-100"><div class="fs-5 fw-bold text-warning">{{ late_arrivals }}</div><div class="small text-secondary text-uppercase">Late Arrivals (&gt; 9:15)</div></div></div>
+                <div class="col-6 col-md-4 col-xl-3"><div class="p-3 rounded-3 bg-light border h-100"><div class="fs-5 fw-bold text-danger">{{ early_checkouts }}</div><div class="small text-secondary text-uppercase">Early Check-outs (&lt; 5 PM)</div></div></div>
             </div>
-        </div>
+            <p class="small text-muted mt-3 mb-0">Punctuality uses 9:15 AM / 5:00 PM reference times. Overtime is time above 8 worked hours per completed day.</p>
+        </section>
     </div>
 </div>
 
-<!-- History Table -->
-<div class="glass-card">
+<section class="glass-card mb-4">
     <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
-        <h5 class="fw-bold mb-0"><i class="bi bi-table text-indigo me-2"></i> Attendance History</h5>
-        <form action="{% url 'employee_attendance' %}" method="GET" class="d-flex gap-2">
-            <select name="month" class="form-select form-select-sm">
-                {% for m_val, m_name in months %}
-                    <option value="{{ m_val }}" {% if m_val == selected_month %}selected{% endif %}>{{ m_name }}</option>
-                {% endfor %}
-            </select>
-            <select name="year" class="form-select form-select-sm">
-                {% for y in years %}
-                    <option value="{{ y }}" {% if y == selected_year %}selected{% endif %}>{{ y }}</option>
-                {% endfor %}
-            </select>
-            <button type="submit" class="btn btn-outline-premium btn-sm">Filter</button>
+        <h2 class="h5 fw-bold mb-0"><i class="bi bi-table text-indigo me-2"></i> Attendance History</h2>
+        <div class="d-flex flex-wrap gap-2 align-items-center">
+            <form action="{% url 'employee_attendance' %}" method="GET" class="d-flex flex-wrap gap-2 attendance-filters">
+                <select name="month" aria-label="Month" class="form-select form-select-sm attendance-month">
+                    {% for m_val, m_name in months %}<option value="{{ m_val }}" {% if m_val == selected_month %}selected{% endif %}>{{ m_name }}</option>{% endfor %}
+                </select>
+                <select name="year" aria-label="Year" class="form-select form-select-sm attendance-year">
+                    {% for y in years %}<option value="{{ y }}" {% if y == selected_year %}selected{% endif %}>{{ y }}</option>{% endfor %}
+                </select>
+                <button type="submit" class="btn btn-outline-premium btn-sm">Filter</button>
+            </form>
+            <a href="{% url 'employee_attendance_export' %}?month={{ selected_month }}&amp;year={{ selected_year }}" class="btn btn-premium btn-sm"><i class="bi bi-download me-1"></i> Export CSV</a>
+            <button type="button" class="btn btn-outline-premium btn-sm" data-bs-toggle="collapse" data-bs-target="#correction-form"><i class="bi bi-wrench-adjustable me-1"></i> Request Regularization</button>
+        </div>
+    </div>
+
+    <div class="collapse mb-4" id="correction-form">
+        <form action="{% url 'employee_attendance_correction' %}" method="POST" class="p-3 rounded-3 bg-light border">
+            {% csrf_token %}
+            <h3 class="h6 fw-bold mb-3">Request an Attendance Correction</h3>
+            <div class="row g-3">
+                <div class="col-md-3"><label for="correction-date" class="form-label small">Date</label><input type="date" name="date" id="correction-date" class="form-control" max="{{ today|date:'Y-m-d' }}" required></div>
+                <div class="col-md-3"><label for="requested-check-in" class="form-label small">Correct Check In</label><input type="time" name="requested_check_in" id="requested-check-in" class="form-control"></div>
+                <div class="col-md-3"><label for="requested-check-out" class="form-label small">Correct Check Out</label><input type="time" name="requested_check_out" id="requested-check-out" class="form-control"></div>
+                <div class="col-md-3"><label for="correction-reason" class="form-label small">Reason</label><input type="text" name="reason" id="correction-reason" class="form-control" maxlength="500" required></div>
+            </div>
+            <button type="submit" class="btn btn-premium btn-sm mt-3"><i class="bi bi-send me-1"></i> Send to HR</button>
         </form>
     </div>
+
     <div class="table-responsive">
-        <table class="table table-hover align-middle">
+        <table class="table table-hover align-middle attendance-table">
             <thead class="table-light text-uppercase" style="font-size: 0.7rem;">
-                <tr>
-                    <th>Date</th>
-                    <th>Status</th>
-                    <th>Check In</th>
-                    <th>Check Out</th>
-                </tr>
+                <tr><th>Date</th><th>Status</th><th>Check In</th><th>Check Out</th><th>Working Hours</th><th>Break Duration</th><th>IP / Location / Mode</th><th>Action / Remarks</th><th>Correction</th></tr>
             </thead>
             <tbody>
-                {% if attendances %}
-                    {% for att in attendances %}
-                        <tr>
-                            <td class="fw-semibold">{{ att.date|date:"M d, Y" }}</td>
-                            <td>
-                                <span class="badge badge-{{ att.status }} rounded-pill px-2 py-1" style="font-size: 0.7rem;">
-                                    {{ att.get_status_display }}
-                                </span>
-                            </td>
-                            <td>{{ att.check_in|time:"h:i A"|default:"-" }}</td>
-                            <td>{{ att.check_out|time:"h:i A"|default:"-" }}</td>
-                        </tr>
-                    {% endfor %}
-                {% else %}
+                {% for att in attendance_rows %}
                     <tr>
-                        <td colspan="4" class="text-center text-muted small py-4">No attendance records found for this period.</td>
+                        <td class="fw-semibold text-nowrap">{{ att.date|date:"M d, Y" }}{% if att.date.weekday >= 5 %}<span class="badge bg-light text-secondary border ms-1">Weekend</span>{% endif %}</td>
+                        <td><span class="badge rounded-pill {{ att.status_badge_class }} px-2 py-1">{{ att.get_status_display }}</span></td>
+                        <td class="text-nowrap">{{ att.check_in|time:"h:i A"|default:"-" }}</td>
+                        <td class="text-nowrap">{{ att.check_out|time:"h:i A"|default:"-" }}</td>
+                        <td class="text-nowrap">{{ att.formatted_work_time }}</td>
+                        <td class="text-nowrap">{{ att.formatted_break_time }}</td>
+                        <td><span class="d-block">{{ att.check_in_ip|default:"-" }}</span><small class="text-secondary">{{ att.get_location_mode_display|default:att.location_mode|title|default:"-" }}</small></td>
+                        <td>{{ att.remarks|default:"-" }}</td>
+                        <td class="text-nowrap">
+                            {% if att.date in pending_correction_dates %}<span class="badge bg-warning-subtle text-warning">Pending</span>{% else %}
+                                <button type="button" class="btn btn-outline-premium btn-sm request-correction" data-date="{{ att.date|date:'Y-m-d' }}" data-bs-toggle="collapse" data-bs-target="#correction-form" aria-label="Request correction for {{ att.date }}"><i class="bi bi-pencil-square"></i></button>
+                            {% endif %}
+                        </td>
                     </tr>
-                {% endif %}
+                {% empty %}
+                    <tr><td colspan="9" class="text-center text-muted small py-4">No attendance records found for this period.</td></tr>
+                {% endfor %}
             </tbody>
         </table>
     </div>
-</div>
+</section>
+
+<script>
+    (() => {
+        const clock = document.getElementById('digital-clock');
+        const timer = document.getElementById('work-timer');
+        const correctionDate = document.getElementById('correction-date');
+
+        const updateClock = () => {
+            clock.textContent = new Intl.DateTimeFormat(undefined, {
+                hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true,
+            }).format(new Date());
+        };
+        updateClock();
+        window.setInterval(updateClock, 1000);
+
+        if (timer && !{{ today_attendance.check_out|yesno:'true,false' }}) {
+            const startSeconds = Number(timer.dataset.elapsedSeconds || 0);
+            const timerStartedAt = Date.now();
+            const onBreak = {{ today_attendance.break_started_at|yesno:'true,false' }};
+            const updateTimer = () => {
+                const elapsed = startSeconds + (onBreak ? 0 : Math.floor((Date.now() - timerStartedAt) / 1000));
+                const hours = Math.floor(elapsed / 3600);
+                const minutes = Math.floor((elapsed % 3600) / 60);
+                timer.textContent = `${String(hours).padStart(2, '0')}h ${String(minutes).padStart(2, '0')}m`;
+            };
+            updateTimer();
+            window.setInterval(updateTimer, 1000);
+        }
+
+        document.querySelectorAll('.request-correction').forEach((button) => {
+            button.addEventListener('click', () => {
+                correctionDate.value = button.dataset.date;
+            });
+        });
+    })();
+</script>
 
 <style>
     .bg-indigo-subtle { background-color: #eef2ff !important; }
     .text-indigo { color: #4f46e5 !important; }
+    .attendance-month { width: 132px; min-width: 132px; padding: 0.45rem 2rem 0.45rem 0.75rem; line-height: 1.4; }
+    .attendance-year { width: 96px; min-width: 96px; padding: 0.45rem 1.8rem 0.45rem 0.75rem; line-height: 1.4; }
+    .attendance-table { min-width: 1050px; }
+    @media (max-width: 575.98px) {
+        .attendance-filters { width: 100%; }
+        .attendance-month { flex: 1; }
+        .attendance-year { width: 92px; min-width: 92px; }
+    }
 </style>
 {% endblock %}

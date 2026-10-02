@@ -5,64 +5,326 @@
 
 {% block header_content %}
 <h1>Projects</h1>
-<p class="text-muted mb-0">Projects you're currently working on for the company.</p>
+<p class="text-muted mb-0">Your project portfolio, milestones, and team assignments.</p>
 {% endblock %}
 
 {% block content %}
-{% if active_projects %}
-    <h6 class="fw-bold mb-3 text-secondary">Active</h6>
-    <div class="row g-4 mb-4">
-        {% for project in active_projects %}
-            <div class="col-md-6 col-lg-4">
-                <div class="glass-card h-100">
-                    <div class="d-flex justify-content-between align-items-start mb-2">
-                        <h5 class="fw-bold mb-0"><i class="bi bi-kanban-fill text-indigo me-2"></i>{{ project.name }}</h5>
-                        <span class="badge badge-active rounded-pill px-2 py-1" style="font-size: 0.7rem;">Active</span>
+<nav class="project-filters" aria-label="Filter projects">
+    {% for filter in project_filters %}
+        <a href="?status={{ filter.value }}" class="project-filter{% if selected_filter == filter.value %} is-active{% endif %}"{% if selected_filter == filter.value %} aria-current="page"{% endif %}>
+            {{ filter.label }} <span>{{ filter.count }}</span>
+        </a>
+    {% endfor %}
+</nav>
+
+{% if projects %}
+    <div class="project-grid">
+        {% for project in projects %}
+            <button type="button" class="project-card glass-card" data-project-id="{{ project.id }}" aria-haspopup="dialog" aria-controls="project-details-dialog">
+                <div class="project-card-heading">
+                    <div>
+                        <span class="project-category">{{ project.category }}</span>
+                        <h2>{{ project.name }}</h2>
                     </div>
-                    <p class="text-secondary small mb-3">{{ project.description|default:"No description provided."|truncatewords:25 }}</p>
-                    <div class="text-muted small">
-                        <i class="bi bi-calendar-event me-1"></i>
-                        {{ project.start_date|date:"M d, Y"|default:"-" }}
-                        {% if project.end_date %} &rarr; {{ project.end_date|date:"M d, Y" }}{% endif %}
-                    </div>
+                    <span class="project-status status-{{ project.status }}">{{ project.get_status_display }}</span>
                 </div>
-            </div>
+                <p class="project-description">{{ project.description|default:project.objective|default:"Project details will be added soon."|truncatewords:24 }}</p>
+                <div class="project-card-meta">
+                    <span><i class="bi bi-person-badge" aria-hidden="true"></i>{{ project.employee_role }}</span>
+                    <span><i class="bi bi-calendar3" aria-hidden="true"></i>{{ project.start_date|date:"M d, Y"|default:"Start date not set" }}</span>
+                    <span><i class="bi bi-flag" aria-hidden="true"></i>Target {{ project.end_date|date:"M d, Y"|default:"not set" }}</span>
+                </div>
+                <div class="project-progress-label"><span>Milestone progress</span><strong>{{ project.progress }}%</strong></div>
+                <div class="project-progress" role="progressbar" aria-label="{{ project.name }} milestone progress" aria-valuenow="{{ project.progress }}" aria-valuemin="0" aria-valuemax="100">
+                    <span style="width: {{ project.progress }}%"></span>
+                </div>
+                <div class="project-card-team">
+                    <div class="avatar-stack" aria-label="Project team">
+                        {% for member in project.team_members|slice:":5" %}
+                            {% if member.profile_photo %}
+                                <img src="{% url 'employee_photo_by_id' member.id %}" alt="{{ member.get_full_name|default:member.username }}" title="{{ member.get_full_name|default:member.username }}">
+                            {% else %}
+                                <span title="{{ member.get_full_name|default:member.username }}">{{ member.get_full_name|default:member.username|slice:":2"|upper }}</span>
+                            {% endif %}
+                        {% empty %}
+                            <span class="avatar-empty"><i class="bi bi-people" aria-hidden="true"></i></span>
+                        {% endfor %}
+                    </div>
+                    <span>{{ project.team_members|length }} team member{{ project.team_members|length|pluralize }}</span>
+                    <i class="bi bi-arrow-up-right project-open-icon" aria-hidden="true"></i>
+                </div>
+            </button>
         {% endfor %}
+    </div>
+{% else %}
+    <div class="project-empty">
+        <i class="bi bi-kanban" aria-hidden="true"></i>
+        <h2>No projects in this view</h2>
+        <p>Projects assigned to you or marked as previous contributions will appear here.</p>
     </div>
 {% endif %}
 
-{% if other_projects %}
-    <h6 class="fw-bold mb-3 text-secondary">Other</h6>
-    <div class="row g-4">
-        {% for project in other_projects %}
-            <div class="col-md-6 col-lg-4">
-                <div class="glass-card h-100">
-                    <div class="d-flex justify-content-between align-items-start mb-2">
-                        <h5 class="fw-bold mb-0"><i class="bi bi-kanban text-indigo me-2"></i>{{ project.name }}</h5>
-                        <span class="badge badge-{{ project.status }} rounded-pill px-2 py-1" style="font-size: 0.7rem;">
-                            {{ project.get_status_display }}
-                        </span>
-                    </div>
-                    <p class="text-secondary small mb-3">{{ project.description|default:"No description provided."|truncatewords:25 }}</p>
-                    <div class="text-muted small">
-                        <i class="bi bi-calendar-event me-1"></i>
-                        {{ project.start_date|date:"M d, Y"|default:"-" }}
-                        {% if project.end_date %} &rarr; {{ project.end_date|date:"M d, Y" }}{% endif %}
+{{ project_details|json_script:"project-details-data" }}
+
+<dialog class="project-dialog" id="project-details-dialog" aria-labelledby="project-modal-title">
+    <div class="project-dialog-shell">
+        <header class="project-dialog-header">
+            <div>
+                <div class="project-modal-kicker"><span id="project-modal-category"></span><span id="project-modal-status" class="project-status"></span></div>
+                <h2 id="project-modal-title"></h2>
+                <p id="project-modal-role"></p>
+            </div>
+            <button type="button" class="project-modal-close" data-close-dialog aria-label="Close project details"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
+        </header>
+        <div class="project-dialog-body">
+            <section class="project-overview-section">
+                <div class="project-overview-copy">
+                    <span class="project-section-label">Overview</span>
+                    <p id="project-modal-description"></p>
+                    <div class="project-overview-columns">
+                        <div><h3>Objective</h3><p id="project-modal-objective"></p></div>
+                        <div><h3>Goals</h3><p id="project-modal-goals"></p></div>
+                        <div><h3>Scope</h3><p id="project-modal-scope"></p></div>
                     </div>
                 </div>
+                <aside class="project-modal-summary">
+                    <span>Timeline</span><strong id="project-modal-start"></strong><span>Target completion</span><strong id="project-modal-end"></strong>
+                    <span>Milestone progress</span><div class="project-progress-label"><strong id="project-modal-progress-label"></strong><span id="project-modal-progress-value"></span></div>
+                    <div class="project-progress"><span id="project-modal-progress-bar"></span></div>
+                </aside>
+            </section>
+            <div class="project-details-grid">
+                <section class="project-detail-section">
+                    <h3><i class="bi bi-signpost-2" aria-hidden="true"></i> Milestones &amp; Deliverables</h3>
+                    <ol id="project-modal-milestones" class="milestone-list"></ol>
+                </section>
+                <section class="project-detail-section">
+                    <h3><i class="bi bi-check2-square" aria-hidden="true"></i> My Assigned Tasks</h3>
+                    <ul id="project-modal-tasks" class="task-list"></ul>
+                </section>
+                <section class="project-detail-section">
+                    <h3><i class="bi bi-cpu" aria-hidden="true"></i> Tech Stack</h3>
+                    <div id="project-modal-technologies" class="technology-list"></div>
+                </section>
+                <section class="project-detail-section">
+                    <h3><i class="bi bi-link-45deg" aria-hidden="true"></i> Project Links &amp; Files</h3>
+                    <ul id="project-modal-resources" class="resource-list"></ul>
+                </section>
+                <section class="project-detail-section project-team-section">
+                    <h3><i class="bi bi-people" aria-hidden="true"></i> Team Directory</h3>
+                    <div id="project-modal-team" class="team-directory"></div>
+                </section>
             </div>
-        {% endfor %}
+        </div>
     </div>
-{% endif %}
-
-{% if not active_projects and not other_projects %}
-    <div class="glass-card text-center py-5">
-        <i class="bi bi-kanban text-secondary" style="font-size: 2.5rem;"></i>
-        <p class="text-muted mt-3 mb-0">You haven't been assigned to any projects yet.</p>
-    </div>
-{% endif %}
+</dialog>
 
 <style>
-    .text-indigo { color: #4f46e5 !important; }
+    .project-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px; border-bottom: 1px solid #dbe3ed; }
+    .project-filter { display: inline-flex; align-items: center; gap: 9px; padding: 10px 13px; color: #64748b; text-decoration: none; font-size: .88rem; font-weight: 600; border-bottom: 2px solid transparent; }
+    .project-filter span { min-width: 22px; padding: 2px 6px; border-radius: 999px; background: #edf2f7; color: #64748b; font-size: .72rem; text-align: center; }
+    .project-filter:hover, .project-filter.is-active { color: #4338ca; border-color: #4f46e5; }
+    .project-filter.is-active span { color: #3730a3; background: #e0e7ff; }
+    .project-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 18px; }
+    .project-card { display: flex; flex-direction: column; align-items: stretch; width: 100%; min-height: 290px; padding: 20px; text-align: left; color: #1e293b; cursor: pointer; }
+    .project-card:focus-visible { outline: 3px solid #818cf8; outline-offset: 3px; }
+    .project-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+    .project-category, .project-section-label { display: block; margin-bottom: 7px; color: #6366f1; font-size: .68rem; font-weight: 700; text-transform: uppercase; }
+    .project-card h2 { margin: 0; color: #0f172a; font-size: 1.06rem; font-weight: 700; }
+    .project-status { display: inline-flex; flex-shrink: 0; align-items: center; padding: 4px 9px; border-radius: 999px; font-size: .7rem; font-weight: 700; white-space: nowrap; }
+    .status-active { color: #047857; background: #d1fae5; }
+    .status-completed { color: #1d4ed8; background: #dbeafe; }
+    .status-on_hold { color: #a16207; background: #fef3c7; }
+    .project-description { min-height: 42px; margin: 14px 0; color: #64748b; font-size: .84rem; line-height: 1.55; }
+    .project-card-meta { display: grid; gap: 7px; margin-bottom: 15px; color: #64748b; font-size: .77rem; }
+    .project-card-meta span { display: flex; align-items: center; gap: 8px; }
+    .project-card-meta i { width: 14px; color: #6366f1; }
+    .project-progress-label { display: flex; justify-content: space-between; margin: 6px 0; color: #64748b; font-size: .74rem; }
+    .project-progress-label strong { color: #334155; }
+    .project-progress { height: 7px; overflow: hidden; border-radius: 9px; background: #e2e8f0; }
+    .project-progress span { display: block; height: 100%; border-radius: inherit; background: #4f46e5; transition: width .35s ease; }
+    .project-card-team { display: flex; align-items: center; gap: 9px; margin-top: auto; padding-top: 16px; color: #64748b; font-size: .74rem; }
+    .avatar-stack { display: flex; align-items: center; padding-left: 2px; }
+    .avatar-stack > * { display: grid; width: 29px; height: 29px; place-items: center; margin-left: -5px; overflow: hidden; border: 2px solid #fff; border-radius: 50%; background: #e0e7ff; color: #4338ca; font-size: .6rem; font-weight: 700; object-fit: cover; }
+    .project-open-icon { margin-left: auto; color: #6366f1; font-size: 1rem; }
+    .project-empty { padding: 64px 20px; text-align: center; color: #64748b; }
+    .project-empty > i { color: #6366f1; font-size: 2.2rem; }
+    .project-empty h2 { margin: 12px 0 6px; color: #0f172a; font-size: 1.1rem; }
+    .project-empty p { margin: 0; font-size: .88rem; }
+    .project-dialog { width: min(920px, calc(100vw - 28px)); max-width: none; max-height: min(90vh, 900px); padding: 0; overflow: visible; border: 0; border-radius: 14px; color: #1e293b; box-shadow: 0 24px 80px rgba(15, 23, 42, .28); }
+    .project-dialog::backdrop { background: rgba(15, 23, 42, .58); backdrop-filter: blur(3px); }
+    .project-dialog[open] .project-dialog-shell { animation: project-dialog-in .22s ease-out both; }
+    @keyframes project-dialog-in { from { opacity: 0; transform: translateY(12px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
+    .project-dialog-shell { max-height: min(90vh, 900px); overflow: auto; border-radius: 14px; background: #fff; }
+    .project-dialog-header { position: sticky; z-index: 2; top: 0; display: flex; justify-content: space-between; gap: 18px; padding: 23px 26px 18px; border-bottom: 1px solid #e2e8f0; background: rgba(255,255,255,.97); }
+    .project-modal-kicker { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; color: #6366f1; font-size: .7rem; font-weight: 700; text-transform: uppercase; }
+    .project-dialog-header h2 { margin: 0; color: #0f172a; font-size: 1.4rem; font-weight: 700; }
+    .project-dialog-header p { margin: 5px 0 0; color: #64748b; font-size: .84rem; }
+    .project-modal-close { flex: 0 0 36px; width: 36px; height: 36px; border: 1px solid #dbe3ed; border-radius: 50%; background: #fff; color: #475569; }
+    .project-modal-close:hover { background: #f1f5f9; }
+    .project-dialog-body { padding: 22px 26px 28px; }
+    .project-overview-section { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 22px; padding-bottom: 22px; border-bottom: 1px solid #e2e8f0; }
+    .project-overview-copy > p { margin: 4px 0 18px; color: #475569; font-size: .88rem; line-height: 1.6; white-space: pre-line; }
+    .project-overview-columns { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+    .project-overview-columns h3 { margin: 0 0 5px; color: #334155; font-size: .78rem; font-weight: 700; }
+    .project-overview-columns p { margin: 0; color: #64748b; font-size: .77rem; line-height: 1.5; white-space: pre-line; }
+    .project-modal-summary { display: flex; flex-direction: column; gap: 7px; padding-left: 18px; border-left: 1px solid #e2e8f0; color: #64748b; font-size: .72rem; }
+    .project-modal-summary strong { margin-bottom: 4px; color: #334155; font-size: .83rem; }
+    .project-modal-summary .project-progress-label { margin: 0; }
+    .project-details-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 30px; }
+    .project-detail-section { min-width: 0; padding: 20px 0; border-bottom: 1px solid #e2e8f0; }
+    .project-detail-section h3 { display: flex; align-items: center; gap: 9px; margin: 0 0 14px; color: #0f172a; font-size: .9rem; font-weight: 700; }
+    .project-detail-section h3 i { color: #4f46e5; }
+    .milestone-list, .task-list, .resource-list { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+    .milestone-item, .task-item, .resource-item { display: flex; align-items: flex-start; gap: 10px; color: #475569; font-size: .8rem; }
+    .milestone-marker { display: grid; flex: 0 0 23px; width: 23px; height: 23px; place-items: center; border-radius: 50%; background: #f1f5f9; color: #64748b; font-size: .68rem; }
+    .milestone-marker.done, .task-marker.completed { background: #d1fae5; color: #047857; }
+    .milestone-marker.in_progress, .task-marker.in_progress { background: #dbeafe; color: #1d4ed8; }
+    .milestone-copy, .task-copy, .resource-copy { display: grid; gap: 3px; }
+    .milestone-copy strong, .task-copy strong, .resource-copy strong { color: #334155; font-size: .8rem; }
+    .milestone-copy small, .task-copy small, .resource-copy small { color: #94a3b8; font-size: .7rem; }
+    .technology-list { display: flex; flex-wrap: wrap; gap: 7px; }
+    .technology-tag { padding: 5px 9px; border: 1px solid #dbe3ed; border-radius: 5px; background: #f8fafc; color: #475569; font-size: .73rem; }
+    .resource-item a { color: #4338ca; font-weight: 600; text-decoration: none; }
+    .resource-item a:hover { text-decoration: underline; }
+    .team-directory { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .team-member { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .team-member img, .team-member .team-initials { display: grid; flex: 0 0 38px; width: 38px; height: 38px; place-items: center; overflow: hidden; border-radius: 50%; background: #e0e7ff; color: #4338ca; font-size: .72rem; font-weight: 700; object-fit: cover; }
+    .team-member-copy { display: grid; min-width: 0; gap: 3px; }
+    .team-member-copy strong { overflow: hidden; color: #334155; font-size: .77rem; text-overflow: ellipsis; white-space: nowrap; }
+    .team-member-copy span { overflow: hidden; color: #64748b; font-size: .68rem; text-overflow: ellipsis; white-space: nowrap; }
+    .detail-empty { color: #94a3b8; font-size: .78rem; }
+    @media (max-width: 700px) {
+        .project-overview-section { grid-template-columns: 1fr; }
+        .project-modal-summary { display: grid; grid-template-columns: 1fr 1fr; padding: 14px 0 0; border-top: 1px solid #e2e8f0; border-left: 0; }
+        .project-modal-summary .project-progress-label, .project-modal-summary .project-progress { grid-column: 1 / -1; }
+    }
+    @media (max-width: 560px) {
+        .project-details-grid, .project-overview-columns, .team-directory { grid-template-columns: 1fr; }
+        .project-dialog-header, .project-dialog-body { padding-right: 18px; padding-left: 18px; }
+        .project-filters { gap: 1px; }
+        .project-filter { padding-right: 8px; padding-left: 8px; font-size: .77rem; }
+    }
 </style>
+
+<script>
+    (() => {
+        const projects = JSON.parse(document.getElementById('project-details-data').textContent);
+        const projectsById = new Map(projects.map((project) => [String(project.id), project]));
+        const dialog = document.getElementById('project-details-dialog');
+        const byId = (id) => document.getElementById(id);
+        const make = (tag, className, text) => {
+            const node = document.createElement(tag);
+            if (className) node.className = className;
+            if (text) node.textContent = text;
+            return node;
+        };
+        const fillEmpty = (container, message) => {
+            container.replaceChildren(make('li', 'detail-empty', message));
+        };
+
+        function openProject(project) {
+            byId('project-modal-title').textContent = project.name;
+            byId('project-modal-category').textContent = project.category;
+            byId('project-modal-role').textContent = project.role;
+            byId('project-modal-description').textContent = project.description || 'No description provided.';
+            byId('project-modal-objective').textContent = project.objective || 'Not provided.';
+            byId('project-modal-goals').textContent = project.goals || 'Not provided.';
+            byId('project-modal-scope').textContent = project.scope || 'Not provided.';
+            byId('project-modal-start').textContent = project.start_date;
+            byId('project-modal-end').textContent = project.end_date;
+            byId('project-modal-progress-label').textContent = `${project.progress}%`;
+            byId('project-modal-progress-value').textContent = `${project.progress}%`;
+            byId('project-modal-progress-bar').style.width = `${project.progress}%`;
+            const status = byId('project-modal-status');
+            status.className = `project-status status-${project.status}`;
+            status.textContent = project.status_label;
+
+            const milestones = byId('project-modal-milestones');
+            milestones.replaceChildren();
+            if (!project.milestones.length) fillEmpty(milestones, 'No milestones have been added.');
+            for (const milestone of project.milestones) {
+                const item = make('li', 'milestone-item');
+                item.append(make('span', `milestone-marker ${milestone.status}`, milestone.status === 'done' ? '✓' : '•'));
+                const copy = make('span', 'milestone-copy');
+                copy.append(make('strong', '', milestone.title));
+                if (milestone.description) copy.append(make('span', '', milestone.description));
+                if (milestone.due_date) copy.append(make('small', '', `Due ${milestone.due_date}`));
+                copy.append(make('small', '', milestone.status_label));
+                item.append(copy);
+                milestones.append(item);
+            }
+
+            const tasks = byId('project-modal-tasks');
+            tasks.replaceChildren();
+            if (!project.tasks.length) fillEmpty(tasks, 'No tasks are assigned to you in this project.');
+            for (const task of project.tasks) {
+                const item = make('li', 'task-item');
+                item.append(make('span', `milestone-marker task-marker ${task.status}`, task.status === 'completed' ? '✓' : '•'));
+                const copy = make('span', 'task-copy');
+                copy.append(make('strong', '', task.title));
+                copy.append(make('small', '', task.due_date ? `${task.status_label} · Due ${task.due_date}` : task.status_label));
+                item.append(copy);
+                tasks.append(item);
+            }
+
+            const technologies = byId('project-modal-technologies');
+            technologies.replaceChildren();
+            if (!project.technologies.length) technologies.append(make('span', 'detail-empty', 'No technologies listed.'));
+            for (const technology of project.technologies) technologies.append(make('span', 'technology-tag', technology));
+
+            const resources = byId('project-modal-resources');
+            resources.replaceChildren();
+            if (!project.resources.length) fillEmpty(resources, 'No project links have been added.');
+            for (const resource of project.resources) {
+                const item = make('li', 'resource-item');
+                item.append(make('i', 'bi bi-box-arrow-up-right'));
+                const copy = make('span', 'resource-copy');
+                const link = make('a', '', resource.title);
+                const target = new URL(resource.url, window.location.origin);
+                if (!['https:', 'http:'].includes(target.protocol)) continue;
+                link.href = target.href;
+                link.target = '_blank';
+                link.rel = 'noopener noreferrer';
+                copy.append(link, make('small', '', resource.type));
+                item.append(copy);
+                resources.append(item);
+            }
+
+            const team = byId('project-modal-team');
+            team.replaceChildren();
+            if (!project.team.length) team.append(make('p', 'detail-empty', 'No team members listed.'));
+            for (const member of project.team) {
+                const item = make('div', 'team-member');
+                if (member.avatar_url) {
+                    const image = make('img');
+                    image.src = member.avatar_url;
+                    image.alt = member.name;
+                    image.addEventListener('error', () => image.replaceWith(make('span', 'team-initials', member.initials)), { once: true });
+                    item.append(image);
+                } else {
+                    item.append(make('span', 'team-initials', member.initials));
+                }
+                const copy = make('span', 'team-member-copy');
+                copy.append(make('strong', '', member.name));
+                copy.append(make('span', '', member.manager ? `${member.designation} · Reports to ${member.manager}` : member.designation));
+                item.append(copy);
+                team.append(item);
+            }
+
+            dialog.showModal();
+        }
+
+        document.querySelectorAll('.project-card').forEach((card) => {
+            card.addEventListener('click', () => {
+                const project = projectsById.get(card.dataset.projectId);
+                if (project) openProject(project);
+            });
+        });
+        dialog.querySelector('[data-close-dialog]').addEventListener('click', () => dialog.close());
+        dialog.addEventListener('click', (event) => {
+            if (event.target === dialog) dialog.close();
+        });
+    })();
+</script>
 {% endblock %}

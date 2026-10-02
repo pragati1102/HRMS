@@ -5,40 +5,55 @@
 
 {% block header_content %}
 <h1>Apply for Leave</h1>
-<p class="text-muted mb-0">Submit a new leave request and track the status of your applications.</p>
+<p class="text-muted mb-0">Review your leave balance, submit a request, and follow its approval status.</p>
 {% endblock %}
 
 {% block content %}
-<div class="row g-4 mb-4">
-    <div class="col-md-6">
-        <div class="glass-card h-100 text-center">
-            <div class="fs-2 fw-bold text-indigo">{{ leaves_taken_year }}</div>
-            <div class="text-secondary small text-uppercase" style="font-size: 0.75rem;">Leave Days Taken This Year</div>
+<section class="row g-3 mb-4" aria-label="Leave balance summary">
+    {% for quota in leave_quota_summary %}
+        <div class="col-sm-6 col-xl-3">
+            <div class="glass-card h-100 py-3">
+                <div class="small text-secondary">{{ quota.leave_type }} Leave</div>
+                {% if quota.quota != None %}
+                    <div class="fs-5 fw-bold text-indigo">{{ quota.available|floatformat:"-1" }} remaining</div>
+                    <div class="small text-muted">{{ quota.used|floatformat:"-1" }} used / {{ quota.quota }} total{% if quota.pending %} · {{ quota.pending|floatformat:"-1" }} pending{% endif %}</div>
+                {% else %}
+                    <div class="fs-5 fw-bold text-secondary">Not configured</div>
+                    <div class="small text-muted">Ask HR to set your quota</div>
+                {% endif %}
+            </div>
+        </div>
+    {% endfor %}
+    <div class="col-sm-6 col-xl-3">
+        <div class="glass-card h-100 py-3">
+            <div class="small text-secondary">Pending Applications</div>
+            <div class="fs-5 fw-bold text-warning">{{ pending_applications_count }}</div>
+            <div class="small text-muted">Awaiting review</div>
         </div>
     </div>
-    <div class="col-md-6">
-        <div class="glass-card h-100 text-center">
-            <div class="fs-2 fw-bold text-indigo">{{ pending_applications_count }}</div>
-            <div class="text-secondary small text-uppercase" style="font-size: 0.75rem;">Pending Applications</div>
-        </div>
-    </div>
-</div>
+</section>
 
 <div class="row g-4">
-    <div class="col-lg-5">
-        <div class="glass-card h-100">
-            <h5 class="fw-bold mb-4"><i class="bi bi-calendar2-plus text-indigo me-2"></i> New Application</h5>
-            <form action="{% url 'employee_apply_leave' %}" method="POST">
+    <div class="col-xl-5">
+        <section class="glass-card h-100">
+            <h2 class="h5 fw-bold mb-4"><i class="bi bi-calendar2-plus text-indigo me-2"></i> New Application</h2>
+            <form action="{% url 'employee_apply_leave' %}" method="POST" enctype="multipart/form-data" id="leave-application-form">
                 {% csrf_token %}
                 <div class="mb-3">
                     <label for="leave_type" class="form-label small fw-semibold text-secondary">Leave Type</label>
-                    <select name="leave_type" id="leave_type" class="form-select">
-                        {% for lt in leave_types %}
-                            <option value="{{ lt }}">{{ lt }}</option>
-                        {% endfor %}
+                    <select name="leave_type" id="leave_type" class="form-select" required>
+                        {% for leave_type in leave_types %}<option value="{{ leave_type }}">{{ leave_type }}</option>{% endfor %}
                     </select>
                 </div>
-                <div class="row g-2 mb-3">
+                <fieldset class="mb-3">
+                    <legend class="form-label small fw-semibold text-secondary mb-2">Duration</legend>
+                    <div class="d-flex flex-wrap gap-3">
+                        <label class="form-check"><input class="form-check-input" type="radio" name="half_day_session" value="full" checked><span class="form-check-label">Full Day</span></label>
+                        <label class="form-check"><input class="form-check-input" type="radio" name="half_day_session" value="first_half"><span class="form-check-label">Half Day (First Half)</span></label>
+                        <label class="form-check"><input class="form-check-input" type="radio" name="half_day_session" value="second_half"><span class="form-check-label">Half Day (Second Half)</span></label>
+                    </div>
+                </fieldset>
+                <div class="row g-2 mb-2">
                     <div class="col-md-6">
                         <label for="start_date" class="form-label small fw-semibold text-secondary">From Date</label>
                         <input type="date" name="start_date" id="start_date" class="form-control" min="{{ today|date:'Y-m-d' }}" required>
@@ -48,58 +63,167 @@
                         <input type="date" name="end_date" id="end_date" class="form-control" min="{{ today|date:'Y-m-d' }}" required>
                     </div>
                 </div>
+                <div class="d-flex justify-content-between align-items-center mb-3 gap-2">
+                    <span id="working-day-total" class="small fw-semibold text-indigo" aria-live="polite">Total: 0 Working Days</span>
+                    <span id="leave-balance-warning" class="small text-danger text-end" aria-live="polite"></span>
+                </div>
+                <div class="mb-3">
+                    <label for="handover_contact" class="form-label small fw-semibold text-secondary">Handover / Relief Contact <span class="fw-normal">(optional)</span></label>
+                    <select name="handover_contact" id="handover_contact" class="form-select">
+                        <option value="">No colleague selected</option>
+                        {% for colleague in colleagues %}<option value="{{ colleague.id }}">{{ colleague.get_full_name|default:colleague.username }}{% if colleague.department %} · {{ colleague.department }}{% endif %}</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="mb-3 d-none" id="supporting-document-field">
+                    <label for="supporting_document" class="form-label small fw-semibold text-secondary">Supporting Document <span class="text-danger">Required</span></label>
+                    <input type="file" name="supporting_document" id="supporting_document" class="form-control" accept=".pdf,.jpg,.jpeg,.png">
+                    <div class="form-text">PDF, JPG or PNG, up to 10 MB.</div>
+                </div>
                 <div class="mb-4">
                     <label for="reason" class="form-label small fw-semibold text-secondary">Reason for Leave</label>
-                    <textarea name="reason" id="reason" class="form-control" rows="3" placeholder="Reason for leave / holiday..." required></textarea>
+                    <textarea name="reason" id="reason" class="form-control" rows="3" maxlength="2000" placeholder="Add a short reason for your request..." required></textarea>
                 </div>
-                <button type="submit" class="btn btn-premium w-100 py-2">
+                <button type="submit" class="btn btn-premium w-100 py-2" id="leave-submit-button">
                     <i class="bi bi-send-fill me-1"></i> Submit Application
                 </button>
             </form>
-        </div>
+        </section>
     </div>
 
-    <div class="col-lg-7">
-        <div class="glass-card h-100">
-            <h5 class="fw-bold mb-4"><i class="bi bi-clock-history text-indigo me-2"></i> Application History</h5>
+    <div class="col-xl-7">
+        <section class="glass-card h-100">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
+                <h2 class="h5 fw-bold mb-0"><i class="bi bi-clock-history text-indigo me-2"></i> Application History</h2>
+                <form method="GET" action="{% url 'employee_leaves' %}" class="d-flex gap-2">
+                    <input type="hidden" name="status" value="{{ leave_filter }}">
+                    <input type="search" name="q" value="{{ search_query }}" class="form-control form-control-sm" placeholder="Search type or reason" aria-label="Search leave applications">
+                    <button type="submit" class="btn btn-outline-premium btn-sm" title="Search"><i class="bi bi-search"></i></button>
+                </form>
+            </div>
+
+            <nav class="nav nav-pills leave-status-filters mb-3" aria-label="Filter leave applications">
+                <a class="nav-link{% if leave_filter == 'all' %} active{% endif %}" href="{% url 'employee_leaves' %}?status=all&amp;q={{ search_query|urlencode }}">All</a>
+                <a class="nav-link{% if leave_filter == 'pending' %} active{% endif %}" href="{% url 'employee_leaves' %}?status=pending&amp;q={{ search_query|urlencode }}">Pending <span class="badge bg-light text-dark ms-1">{{ leave_filter_counts.pending }}</span></a>
+                <a class="nav-link{% if leave_filter == 'approved' %} active{% endif %}" href="{% url 'employee_leaves' %}?status=approved&amp;q={{ search_query|urlencode }}">Approved</a>
+                <a class="nav-link{% if leave_filter == 'rejected' %} active{% endif %}" href="{% url 'employee_leaves' %}?status=rejected&amp;q={{ search_query|urlencode }}">Rejected</a>
+            </nav>
+
             <div class="table-responsive">
-                <table class="table table-hover align-middle">
-                    <thead class="table-light text-uppercase" style="font-size: 0.7rem;">
-                        <tr>
-                            <th>Type</th>
-                            <th>Dates</th>
-                            <th>Reason</th>
-                            <th>Status</th>
-                        </tr>
+                <table class="table table-hover align-middle leave-history-table">
+                    <thead class="table-light text-uppercase" style="font-size: 0.68rem;">
+                        <tr><th>Type / Duration</th><th>Dates</th><th>Reason / Review</th><th>Status</th><th>Action</th></tr>
                     </thead>
                     <tbody>
-                        {% if leave_applications %}
-                            {% for leave in leave_applications %}
-                                <tr>
-                                    <td class="small fw-semibold">{{ leave.leave_type }}</td>
-                                    <td class="small">{{ leave.start_date|date:"M d" }} - {{ leave.end_date|date:"M d, Y" }}</td>
-                                    <td class="text-wrap" style="max-width: 200px; font-size: 0.85rem;">{{ leave.reason }}</td>
-                                    <td>
-                                        <span class="badge badge-{{ leave.status }} rounded-pill px-2 py-1" style="font-size: 0.7rem;">
-                                            {{ leave.status|title }}
-                                        </span>
-                                    </td>
-                                </tr>
-                            {% endfor %}
-                        {% else %}
+                        {% for leave in leave_applications %}
                             <tr>
-                                <td colspan="4" class="text-center text-muted small py-4">No leave applications found.</td>
+                                <td class="small fw-semibold text-nowrap">{{ leave.leave_type }}<small class="text-secondary d-block">{{ leave.get_half_day_session_display }}</small></td>
+                                <td class="small text-nowrap">{{ leave.start_date|date:"M d" }}{% if leave.end_date != leave.start_date %} – {{ leave.end_date|date:"M d" }}{% endif %}, {{ leave.end_date|date:"Y" }}</td>
+                                <td class="text-wrap" style="min-width: 150px; max-width: 240px; font-size: 0.82rem;">
+                                    <span>{{ leave.reason }}</span>
+                                    <small class="text-secondary d-block">Approver: {% if leave.approved_by %}{{ leave.approved_by.get_full_name|default:leave.approved_by.username }}{% elif request.user.manager %}{{ request.user.manager.get_full_name|default:request.user.manager.username }}{% else %}HR{% endif %}</small>
+                                    {% if leave.handover_contact %}<small class="text-secondary d-block">Handover: {{ leave.handover_contact.get_full_name|default:leave.handover_contact.username }}</small>{% endif %}
+                                    {% if leave.approval_notes %}<small class="text-danger d-block">Feedback: {{ leave.approval_notes }}</small>{% endif %}
+                                    {% if leave.supporting_document %}<a href="{% url 'employee_leave_document' leave.id %}" class="small">View supporting document</a>{% endif %}
+                                </td>
+                                <td><span class="badge rounded-pill badge-{{ leave.status }} px-2 py-1">{{ leave.get_status_display }}</span></td>
+                                <td>
+                                    {% if leave.status == 'pending' %}
+                                        <form action="{% url 'employee_withdraw_leave' leave.id %}" method="POST" onsubmit="return confirm('Withdraw this leave application?');">
+                                            {% csrf_token %}<button type="submit" class="btn btn-outline-danger btn-sm text-nowrap">Withdraw</button>
+                                        </form>
+                                    {% else %}<span class="text-secondary">—</span>{% endif %}
+                                </td>
                             </tr>
-                        {% endif %}
+                        {% empty %}
+                            <tr><td colspan="5" class="text-center text-muted small py-4">No leave applications match this view.</td></tr>
+                        {% endfor %}
                     </tbody>
                 </table>
             </div>
-        </div>
+
+            {% if leave_applications.paginator.num_pages > 1 %}
+                <nav class="d-flex justify-content-between align-items-center mt-3" aria-label="Leave history pages">
+                    <span class="small text-secondary">Page {{ leave_applications.number }} of {{ leave_applications.paginator.num_pages }}</span>
+                    <div class="btn-group btn-group-sm">
+                        {% if leave_applications.has_previous %}<a class="btn btn-outline-premium" href="?status={{ leave_filter }}&amp;q={{ search_query|urlencode }}&amp;page={{ leave_applications.previous_page_number }}" aria-label="Previous page"><i class="bi bi-chevron-left"></i></a>{% endif %}
+                        {% if leave_applications.has_next %}<a class="btn btn-outline-premium" href="?status={{ leave_filter }}&amp;q={{ search_query|urlencode }}&amp;page={{ leave_applications.next_page_number }}" aria-label="Next page"><i class="bi bi-chevron-right"></i></a>{% endif %}
+                    </div>
+                </nav>
+            {% endif %}
+        </section>
     </div>
 </div>
+
+<script>
+    (() => {
+        const startDate = document.getElementById('start_date');
+        const endDate = document.getElementById('end_date');
+        const leaveType = document.getElementById('leave_type');
+        const durationInputs = document.querySelectorAll('input[name="half_day_session"]');
+        const totalLabel = document.getElementById('working-day-total');
+        const balanceWarning = document.getElementById('leave-balance-warning');
+        const submitButton = document.getElementById('leave-submit-button');
+        const documentField = document.getElementById('supporting-document-field');
+        const documentInput = document.getElementById('supporting_document');
+        const holidays = new Set('{{ holiday_dates|join:"," }}'.split(',').filter(Boolean));
+        const quotas = {
+            {% for quota in leave_quota_summary %}'{{ quota.leave_type }}': {
+                available: {% if quota.available != None %}{{ quota.available }}{% else %}null{% endif %},
+            },{% endfor %}
+        };
+
+        const selectedDuration = () => document.querySelector('input[name="half_day_session"]:checked').value;
+        const countWorkingDays = () => {
+            if (!startDate.value || !endDate.value || endDate.value < startDate.value) return 0;
+            if (selectedDuration() !== 'full') {
+                return startDate.value === endDate.value && !holidays.has(startDate.value) && new Date(`${startDate.value}T12:00:00`).getDay() % 6 !== 0 ? 0.5 : 0;
+            }
+            let count = 0;
+            const date = new Date(`${startDate.value}T12:00:00`);
+            const lastDate = new Date(`${endDate.value}T12:00:00`);
+            while (date <= lastDate) {
+                const dateKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+                if (date.getDay() % 6 !== 0 && !holidays.has(dateKey)) count += 1;
+                date.setDate(date.getDate() + 1);
+            }
+            return count;
+        };
+
+        const refreshForm = () => {
+            const total = countWorkingDays();
+            totalLabel.textContent = `Total: ${total} Working Day${total === 1 ? '' : 's'}`;
+            const balance = quotas[leaveType.value]?.available;
+            const balanceCheckedType = ['Casual', 'Sick', 'Paid'].includes(leaveType.value);
+            const exceeded = balanceCheckedType && balance !== null && balance !== undefined && total > balance;
+            balanceWarning.textContent = exceeded ? `Exceeds available balance (${balance} days)` : '';
+            submitButton.disabled = exceeded || total <= 0;
+            const needsDocument = ['Sick', 'Maternity', 'Paternity'].includes(leaveType.value);
+            documentField.classList.toggle('d-none', !needsDocument);
+            documentInput.required = needsDocument;
+            endDate.readOnly = selectedDuration() !== 'full';
+            if (endDate.readOnly && startDate.value) endDate.value = startDate.value;
+        };
+
+        [startDate, endDate, leaveType, ...durationInputs].forEach((field) => field.addEventListener('change', refreshForm));
+        startDate.addEventListener('change', () => {
+            endDate.min = startDate.value || '{{ today|date:"Y-m-d" }}';
+            if (selectedDuration() !== 'full') endDate.value = startDate.value;
+            refreshForm();
+        });
+        refreshForm();
+    })();
+</script>
 
 <style>
     .bg-indigo-subtle { background-color: #eef2ff !important; }
     .text-indigo { color: #4f46e5 !important; }
+    .leave-status-filters { gap: 0.35rem; }
+    .leave-status-filters .nav-link { padding: 0.4rem 0.65rem; font-size: 0.82rem; color: #64748b; }
+    .leave-status-filters .nav-link.active { color: #fff; background: var(--sidebar-active); }
+    .leave-history-table { min-width: 650px; }
+    @media (max-width: 575.98px) {
+        .leave-status-filters { flex-wrap: nowrap; overflow-x: auto; }
+        .leave-status-filters .nav-link { white-space: nowrap; }
+    }
 </style>
 {% endblock %}

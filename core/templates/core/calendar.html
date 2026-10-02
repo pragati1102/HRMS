@@ -5,111 +5,231 @@
 
 {% block header_content %}
 <h1>Calendar</h1>
-<p class="text-muted mb-0">Your attendance and leave days at a glance.</p>
+<p class="text-muted mb-0">Your attendance, leave, and company events at a glance.</p>
 {% endblock %}
 
 {% block content %}
-<div class="glass-card">
-    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
-        <h5 class="fw-bold mb-0">{{ month_name }} {{ selected_year }}</h5>
-        <div class="d-flex gap-2">
-            <a href="?month={{ prev_month }}&year={{ prev_year }}" class="btn btn-outline-premium btn-sm">
-                <i class="bi bi-chevron-left"></i>
-            </a>
-            <a href="?month={{ today.month }}&year={{ today.year }}" class="btn btn-outline-premium btn-sm">Today</a>
-            <a href="?month={{ next_month }}&year={{ next_year }}" class="btn btn-outline-premium btn-sm">
-                <i class="bi bi-chevron-right"></i>
-            </a>
+<section class="glass-card">
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-3">
+        <h2 class="h5 fw-bold mb-0">{{ month_name }} {{ selected_year }}</h2>
+        <div class="d-flex flex-wrap align-items-center gap-2">
+            <div class="btn-group btn-group-sm" role="group" aria-label="Calendar view">
+                <a class="btn {% if calendar_view == 'month' %}btn-premium{% else %}btn-outline-premium{% endif %}" href="?month={{ selected_month }}&amp;year={{ selected_year }}&amp;view=month">Month</a>
+                <a class="btn {% if calendar_view == 'week' %}btn-premium{% else %}btn-outline-premium{% endif %}" href="?month={{ selected_month }}&amp;year={{ selected_year }}&amp;view=week">Week</a>
+                <a class="btn {% if calendar_view == 'agenda' %}btn-premium{% else %}btn-outline-premium{% endif %}" href="?month={{ selected_month }}&amp;year={{ selected_year }}&amp;view=agenda">Agenda</a>
+            </div>
+            <div class="btn-group btn-group-sm">
+                <a href="?month={{ prev_month }}&amp;year={{ prev_year }}&amp;view={{ calendar_view }}" class="btn btn-outline-premium" aria-label="Previous month"><i class="bi bi-chevron-left"></i></a>
+                <a href="?month={{ today.month }}&amp;year={{ today.year }}&amp;view={{ calendar_view }}" class="btn btn-outline-premium">Today</a>
+                <a href="?month={{ next_month }}&amp;year={{ next_year }}&amp;view={{ calendar_view }}" class="btn btn-outline-premium" aria-label="Next month"><i class="bi bi-chevron-right"></i></a>
+            </div>
         </div>
     </div>
 
-    <div class="calendar-grid">
-        <div class="calendar-head">Sun</div>
-        <div class="calendar-head">Mon</div>
-        <div class="calendar-head">Tue</div>
-        <div class="calendar-head">Wed</div>
-        <div class="calendar-head">Thu</div>
-        <div class="calendar-head">Fri</div>
-        <div class="calendar-head">Sat</div>
-
-        {% for week in weeks %}
-            {% for day in week %}
-                {% if day %}
-                    <div class="calendar-cell {% if day.is_today %}is-today{% endif %} {% if day.is_weekend %}is-weekend{% endif %}">
-                        <div class="cell-day">{{ day.day }}</div>
-                        {% if day.attendance_status %}
-                            <span class="badge badge-{{ day.attendance_status }} rounded-pill px-2 py-1 mb-1" style="font-size: 0.65rem;">
-                                {{ day.attendance_status|title }}
-                            </span>
-                        {% endif %}
-                        {% if day.leave_status %}
-                            <span class="badge badge-leave rounded-pill px-2 py-1" style="font-size: 0.65rem;">
-                                Leave{% if day.leave_status == 'pending' %} (Pending){% endif %}
-                            </span>
-                        {% endif %}
-                    </div>
-                {% else %}
-                    <div class="calendar-cell is-empty"></div>
-                {% endif %}
-            {% endfor %}
-        {% endfor %}
+    <div class="d-flex flex-wrap gap-3 align-items-center mb-3 calendar-filters" role="group" aria-label="Filter calendar events">
+        <label class="form-check form-check-inline mb-0"><input class="form-check-input calendar-filter" type="checkbox" data-filter="attendance" checked><span class="form-check-label small">My Attendance</span></label>
+        <label class="form-check form-check-inline mb-0"><input class="form-check-input calendar-filter" type="checkbox" data-filter="leave" checked><span class="form-check-label small">Approved Leaves</span></label>
+        <label class="form-check form-check-inline mb-0"><input class="form-check-input calendar-filter" type="checkbox" data-filter="holiday" checked><span class="form-check-label small">Company Holidays</span></label>
+        <label class="form-check form-check-inline mb-0"><input class="form-check-input calendar-filter" type="checkbox" data-filter="birthday" checked><span class="form-check-label small">Team Birthdays</span></label>
     </div>
 
-    <div class="d-flex flex-wrap gap-3 mt-4 small text-secondary">
-        <span><span class="legend-dot badge-present"></span> Present</span>
-        <span><span class="legend-dot badge-half_day"></span> Half Day</span>
-        <span><span class="legend-dot badge-absent"></span> Absent</span>
-        <span><span class="legend-dot badge-leave"></span> Leave</span>
+    {% if calendar_view == 'agenda' %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle agenda-table">
+                <thead class="table-light text-uppercase" style="font-size: 0.7rem;"><tr><th>Date</th><th>Events</th><th>Attendance</th><th>Team</th><th></th></tr></thead>
+                <tbody>
+                    {% for day in agenda_days %}
+                        <tr class="calendar-event-row" data-has-attendance="{% if day.attendance %}1{% else %}0{% endif %}" data-has-leave="{% if day.leave and day.leave.status == 'approved' %}1{% else %}0{% endif %}" data-has-holiday="{% if day.holiday %}1{% else %}0{% endif %}" data-has-birthday="{% if day.birthdays %}1{% else %}0{% endif %}">
+                            <td class="text-nowrap fw-semibold">{{ day.date|date:"D, M d, Y" }}</td>
+                            <td>
+                                {% if day.holiday %}<span class="status-chip status-holiday">{{ day.holiday.name }}</span>{% endif %}
+                                {% if day.leave %}<span class="status-chip status-leave">{{ day.leave_type }} Leave · {{ day.leave.status|title }}</span>{% endif %}
+                                {% if day.birthdays %}<span class="status-chip status-birthday">Birthday · {{ day.birthdays|join:", " }}</span>{% endif %}
+                                {% if day.attendance %}<span class="status-chip status-{{ day.attendance_status }}">{{ day.attendance.get_status_display }}</span>{% endif %}
+                            </td>
+                            <td>{% if day.check_in %}{{ day.check_in|time:"h:i A" }} – {{ day.check_out|time:"h:i A"|default:"Active" }}{% else %}—{% endif %}{% if day.working_time %}<small class="d-block text-secondary">{{ day.working_time }}</small>{% endif %}</td>
+                            <td>{% if day.team_away_count %}{{ day.team_away_count }} on leave{% else %}—{% endif %}</td>
+                            <td><button type="button" class="btn btn-outline-premium btn-sm calendar-day-open" data-date="{{ day.date_iso }}" data-attendance="{{ day.attendance_status }}" data-check-in="{{ day.check_in|time:'h:i A' }}" data-check-out="{{ day.check_out|time:'h:i A' }}" data-working-time="{{ day.working_time }}" data-leave-type="{{ day.leave_type }}" data-leave-status="{{ day.leave.status|default:'' }}" data-leave-approver="{{ day.leave_approver }}" data-leave-notes="{{ day.leave.approval_notes|default:'' }}" data-holiday="{{ day.holiday.name|default:'' }}" data-team-away="{{ day.team_away_count }}" data-bs-toggle="modal" data-bs-target="#calendar-day-modal">Details</button></td>
+                        </tr>
+                    {% empty %}<tr><td colspan="5" class="text-center text-secondary py-4">No events this month.</td></tr>{% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="calendar-grid {% if calendar_view == 'week' %}calendar-grid-week{% endif %}">
+            <div class="calendar-head">Sun</div><div class="calendar-head">Mon</div><div class="calendar-head">Tue</div><div class="calendar-head">Wed</div><div class="calendar-head">Thu</div><div class="calendar-head">Fri</div><div class="calendar-head">Sat</div>
+            {% for week in weeks %}
+                {% for day in week %}
+                    {% if day %}
+                        <div class="calendar-cell{% if day.is_today %} is-today{% endif %}{% if day.is_weekend %} is-weekend{% endif %} calendar-event-cell" data-has-attendance="{% if day.attendance %}1{% else %}0{% endif %}" data-has-leave="{% if day.leave and day.leave.status == 'approved' %}1{% else %}0{% endif %}" data-has-holiday="{% if day.holiday %}1{% else %}0{% endif %}" data-has-birthday="{% if day.birthdays %}1{% else %}0{% endif %}">
+                            <button type="button" class="calendar-day-open calendar-day-button" data-date="{{ day.date_iso }}" data-attendance="{{ day.attendance_status }}" data-check-in="{{ day.check_in|time:'h:i A' }}" data-check-out="{{ day.check_out|time:'h:i A' }}" data-working-time="{{ day.working_time }}" data-leave-type="{{ day.leave_type }}" data-leave-status="{{ day.leave.status|default:'' }}" data-leave-approver="{{ day.leave_approver }}" data-leave-notes="{{ day.leave.approval_notes|default:'' }}" data-holiday="{{ day.holiday.name|default:'' }}" data-team-away="{{ day.team_away_count }}" data-bs-toggle="modal" data-bs-target="#calendar-day-modal" aria-label="Open details for {{ day.date|date:'F j, Y' }}">
+                                <span class="cell-day">{{ day.day }}</span>
+                                {% if day.holiday %}<span class="status-chip status-holiday event-holiday">{{ day.holiday.name }}</span>{% endif %}
+                                {% if day.leave %}<span class="status-chip status-leave event-leave">{{ day.leave_type }} Leave{% if day.leave.status == 'pending' %} · Pending{% endif %}</span>{% endif %}
+                                {% if day.attendance %}<span class="status-chip status-{{ day.attendance_status }} event-attendance">{{ day.attendance.get_status_display }}</span>{% endif %}
+                                {% for birthday in day.birthdays %}<span class="status-chip status-birthday event-birthday">Birthday · {{ birthday }}</span>{% endfor %}
+                                {% if day.team_away_count %}<span class="team-away-count">{{ day.team_away_count }} team member{{ day.team_away_count|pluralize }} on leave</span>{% endif %}
+                            </button>
+                            {% if day.date >= today %}<button type="button" class="quick-apply-button" data-quick-apply-date="{{ day.date_iso }}"><i class="bi bi-plus-lg"></i><span>Apply leave</span></button>{% endif %}
+                        </div>
+                    {% else %}<div class="calendar-cell is-empty"></div>{% endif %}
+                {% endfor %}
+            {% endfor %}
+        </div>
+    {% endif %}
+
+    <div class="d-flex flex-wrap gap-2 mt-4 calendar-legend" aria-label="Calendar status legend">
+        <span class="status-chip status-present">Present</span>
+        <span class="status-chip status-half_day">Half Day</span>
+        <span class="status-chip status-absent">Absent</span>
+        <span class="status-chip status-leave">Leave</span>
+        <span class="status-chip status-holiday">Public Holiday</span>
+        <span class="status-chip status-off-day">Weekend / Off Day</span>
+        <span class="status-chip status-birthday">Team Birthday</span>
+    </div>
+</section>
+
+<div class="modal fade" id="calendar-day-modal" tabindex="-1" aria-labelledby="calendar-day-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header">
+                <div><h2 class="modal-title h5 fw-bold" id="calendar-day-title">Day Details</h2><div class="small text-secondary" id="calendar-day-subtitle"></div></div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3 mb-4">
+                    <div class="col-6"><span class="small text-secondary d-block">Attendance</span><strong id="modal-attendance">—</strong></div>
+                    <div class="col-6"><span class="small text-secondary d-block">Working Hours</span><strong id="modal-hours">—</strong></div>
+                    <div class="col-6"><span class="small text-secondary d-block">Check In</span><strong id="modal-check-in">—</strong></div>
+                    <div class="col-6"><span class="small text-secondary d-block">Check Out</span><strong id="modal-check-out">—</strong></div>
+                    <div class="col-12"><span class="small text-secondary d-block">Leave</span><strong id="modal-leave">—</strong><small class="text-secondary d-block" id="modal-leave-notes"></small></div>
+                    <div class="col-12 d-none" id="modal-holiday-row"><span class="small text-secondary d-block">Company Holiday</span><strong id="modal-holiday"></strong></div>
+                    <div class="col-12 d-none" id="modal-team-row"><span class="small text-secondary d-block">Team Coverage</span><strong id="modal-team-away"></strong></div>
+                </div>
+                <form action="{% url 'employee_apply_leave' %}" method="POST" enctype="multipart/form-data" id="calendar-quick-leave-form" class="border-top pt-3">
+                    {% csrf_token %}
+                    <h3 class="h6 fw-bold mb-3">Apply Leave for This Day</h3>
+                    <input type="hidden" name="start_date" id="quick-leave-start">
+                    <input type="hidden" name="end_date" id="quick-leave-end">
+                    <div class="mb-3"><label for="quick-leave-type" class="form-label small">Leave Type</label><select name="leave_type" id="quick-leave-type" class="form-select">{% for leave_type in leave_types %}<option value="{{ leave_type }}">{{ leave_type }}</option>{% endfor %}</select></div>
+                    <input type="hidden" name="half_day_session" value="full">
+                    <div class="mb-3 d-none" id="quick-leave-document-wrap"><label for="quick-leave-document" class="form-label small">Supporting Document <span class="text-danger">Required</span></label><input type="file" name="supporting_document" id="quick-leave-document" class="form-control" accept=".pdf,.jpg,.jpeg,.png"></div>
+                    <div class="mb-3"><label for="quick-leave-reason" class="form-label small">Reason</label><textarea name="reason" id="quick-leave-reason" class="form-control" rows="2" required></textarea></div>
+                    <button type="submit" class="btn btn-premium w-100">Submit Leave Request</button>
+                </form>
+            </div>
+        </div>
     </div>
 </div>
 
+<script>
+    (() => {
+        const dayTitle = document.getElementById('calendar-day-title');
+        const subtitle = document.getElementById('calendar-day-subtitle');
+        const startField = document.getElementById('quick-leave-start');
+        const endField = document.getElementById('quick-leave-end');
+        const quickForm = document.getElementById('calendar-quick-leave-form');
+        const leaveType = document.getElementById('quick-leave-type');
+        const documentWrap = document.getElementById('quick-leave-document-wrap');
+        const documentInput = document.getElementById('quick-leave-document');
+
+        const setText = (id, value, fallback = '—') => {
+            document.getElementById(id).textContent = value || fallback;
+        };
+
+        document.querySelectorAll('.calendar-day-open').forEach((button) => {
+            button.addEventListener('click', () => {
+                const dateValue = button.dataset.date;
+                const date = new Date(`${dateValue}T12:00:00`);
+                const displayDate = new Intl.DateTimeFormat(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }).format(date);
+                dayTitle.textContent = 'Day Details';
+                subtitle.textContent = displayDate;
+                setText('modal-attendance', button.dataset.attendance ? button.dataset.attendance.replace('_', ' ') : 'No record');
+                setText('modal-check-in', button.dataset.checkIn);
+                setText('modal-check-out', button.dataset.checkOut);
+                setText('modal-hours', button.dataset.workingTime);
+                const leaveDescription = button.dataset.leaveType ? `${button.dataset.leaveType} Leave · ${button.dataset.leaveStatus}` : '';
+                setText('modal-leave', leaveDescription);
+                const approver = button.dataset.leaveApprover ? `Approved by ${button.dataset.leaveApprover}` : '';
+                const notes = button.dataset.leaveNotes || approver;
+                setText('modal-leave-notes', notes, '');
+                document.getElementById('modal-holiday-row').classList.toggle('d-none', !button.dataset.holiday);
+                setText('modal-holiday', button.dataset.holiday);
+                document.getElementById('modal-team-row').classList.toggle('d-none', !Number(button.dataset.teamAway));
+                setText('modal-team-away', Number(button.dataset.teamAway) ? `${button.dataset.teamAway} team member${Number(button.dataset.teamAway) === 1 ? '' : 's'} on approved leave` : '');
+                startField.value = dateValue;
+                endField.value = dateValue;
+                quickForm.classList.toggle('d-none', dateValue < '{{ today|date:"Y-m-d" }}');
+                document.getElementById('quick-leave-reason').value = '';
+                documentInput.value = '';
+                refreshDocumentRequirement();
+            });
+        });
+
+        document.querySelectorAll('[data-quick-apply-date]').forEach((button) => {
+            button.addEventListener('click', () => {
+                const openButton = document.querySelector(`.calendar-day-open[data-date="${button.dataset.quickApplyDate}"]`);
+                if (openButton) openButton.click();
+            });
+        });
+
+        const refreshDocumentRequirement = () => {
+            const required = ['Sick', 'Maternity', 'Paternity'].includes(leaveType.value);
+            documentWrap.classList.toggle('d-none', !required);
+            documentInput.required = required;
+        };
+        leaveType.addEventListener('change', refreshDocumentRequirement);
+
+        document.querySelectorAll('.calendar-filter').forEach((filter) => {
+            filter.addEventListener('change', () => {
+                const filterNames = ['attendance', 'leave', 'holiday', 'birthday'];
+                document.querySelectorAll('.calendar-event-cell, .calendar-event-row').forEach((item) => {
+                    const hasVisibleEvent = filterNames.some((name) => {
+                        const toggle = document.querySelector(`.calendar-filter[data-filter="${name}"]`);
+                        return toggle.checked && item.dataset[`has${name[0].toUpperCase()}${name.slice(1)}`] === '1';
+                    });
+                    item.classList.toggle('event-filtered-out', !hasVisibleEvent && filterNames.some((name) => item.dataset[`has${name[0].toUpperCase()}${name.slice(1)}`] === '1'));
+                });
+            });
+        });
+    })();
+</script>
+
 <style>
     .text-indigo { color: #4f46e5 !important; }
-    .calendar-grid {
-        display: grid;
-        grid-template-columns: repeat(7, 1fr);
-        gap: 8px;
-    }
-    .calendar-head {
-        text-align: center;
-        font-weight: 700;
-        font-size: 0.75rem;
-        text-transform: uppercase;
-        color: #94a3b8;
-        padding-bottom: 8px;
-    }
-    .calendar-cell {
-        min-height: 90px;
-        border-radius: 12px;
-        border: 1px solid #f1f5f9;
-        padding: 8px;
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-    }
-    .calendar-cell.is-empty {
-        border: none;
-    }
-    .calendar-cell.is-weekend {
-        background-color: #f8fafc;
-    }
-    .calendar-cell.is-today {
-        border: 2px solid #4f46e5;
-        box-shadow: 0 4px 12px rgba(99, 102, 241, 0.15);
-    }
-    .cell-day {
-        font-weight: 600;
-        font-size: 0.8rem;
-        color: #334155;
-        margin-bottom: 2px;
-    }
-    .legend-dot {
-        display: inline-block;
-        width: 10px;
-        height: 10px;
-        border-radius: 50%;
-        margin-right: 6px;
-        vertical-align: middle;
+    .calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
+    .calendar-head { text-align: center; font-weight: 700; font-size: 0.7rem; text-transform: uppercase; color: #64748b; padding-bottom: 6px; }
+    .calendar-cell { min-width: 0; min-height: 112px; border-radius: 8px; border: 1px solid #e2e8f0; padding: 0; display: flex; flex-direction: column; background: #fff; overflow: hidden; }
+    .calendar-cell.is-empty { min-height: 0; border: 0; background: transparent; }
+    .calendar-cell.is-weekend { background: #f1f5f9; }
+    .calendar-cell.is-today { border: 2px solid #4f46e5; box-shadow: 0 3px 10px rgba(79, 70, 229, 0.12); }
+    .calendar-day-button { border: 0; background: transparent; width: 100%; min-height: 86px; padding: 7px; display: flex; flex: 1; align-items: stretch; flex-direction: column; gap: 4px; text-align: left; cursor: pointer; }
+    .calendar-day-button:hover { background: rgba(79, 70, 229, 0.035); }
+    .cell-day { font-weight: 700; font-size: 0.75rem; color: #334155; margin-bottom: 1px; }
+    .status-chip { display: inline-flex; align-items: center; width: fit-content; max-width: 100%; border: 1px solid transparent; border-radius: 999px; padding: 2px 8px; font-size: 0.66rem; font-weight: 700; line-height: 1.35; }
+    .calendar-day-button .status-chip { white-space: normal; overflow-wrap: anywhere; }
+    .status-present { color: #047857; background: #d1fae5; border-color: #6ee7b7; }
+    .status-half_day { color: #1d4ed8; background: #dbeafe; border-color: #93c5fd; }
+    .status-absent { color: #b91c1c; background: #fee2e2; border-color: #fca5a5; }
+    .status-leave { color: #92400e; background: #fef3c7; border-color: #fcd34d; }
+    .status-holiday { color: #6b21a8; background: #f3e8ff; border-color: #d8b4fe; }
+    .status-off-day { color: #475569; background: #e2e8f0; border-color: #cbd5e1; }
+    .status-birthday { color: #9d174d; background: #fce7f3; border-color: #f9a8d4; }
+    .team-away-count { color: #475569; font-size: 0.62rem; padding: 0 7px 4px; }
+    .quick-apply-button { align-self: flex-start; background: transparent; border: 0; padding: 3px 7px 6px; font-size: 0.63rem; color: #4f46e5; }
+    .quick-apply-button span { margin-left: 4px; }
+    .quick-apply-button:hover { text-decoration: underline; }
+    .calendar-legend .status-chip { font-size: 0.73rem; padding: 4px 10px; }
+    .event-filtered-out { display: none !important; }
+    .calendar-grid-week { grid-template-rows: auto minmax(180px, 1fr); }
+    .agenda-table { min-width: 680px; }
+    @media (max-width: 767.98px) {
+        .calendar-grid { gap: 4px; }
+        .calendar-cell { min-height: 82px; border-radius: 6px; }
+        .calendar-day-button { min-height: 70px; padding: 4px; gap: 3px; }
+        .status-chip { font-size: 0.57rem; padding: 2px 5px; }
+        .team-away-count { font-size: 0.55rem; padding: 0 4px 3px; }
+        .quick-apply-button span { display: none; }
     }
 </style>
 {% endblock %}

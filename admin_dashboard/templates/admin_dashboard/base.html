@@ -312,7 +312,7 @@
             <li class="{% block active_attendance %}{% endblock %}">
                 <a href="{% url 'employee_attendance' %}">
                     <i class="bi bi-clock-history"></i>
-                    <span>Login Time</span>
+                    <span>Attendance</span>
                 </a>
             </li>
             <li class="{% block active_apply_leave %}{% endblock %}">
@@ -367,8 +367,8 @@
                     <div class="fw-bold">{{ request.user.get_full_name|default:request.user.username }}</div>
                     <small class="text-muted text-uppercase" style="font-size: 0.75rem; letter-spacing: 0.05em;">{{ request.user.role }}</small>
                 </div>
-                <div class="bg-white border border-light-subtle rounded-circle d-flex align-items-center justify-content-center" style="width: 45px; height: 45px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05)">
-                    <i class="bi bi-person-fill fs-5 text-indigo"></i>
+                <div class="bg-white border border-light-subtle rounded-circle d-flex align-items-center justify-content-center overflow-hidden" style="width: 45px; height: 45px; flex: 0 0 45px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05)">
+                    {% block user_avatar %}{% with avatar_user=request.user avatar_emoji_size='1.5rem' %}{% include 'core/partials/avatar.html' %}{% endwith %}{% endblock %}
                 </div>
             </div>
         </div>
