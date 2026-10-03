@@ -3,6 +3,7 @@ import datetime
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from django.utils import timezone
 
@@ -24,6 +25,32 @@ class User(AbstractUser):
     ]
     gender = models.CharField(max_length=10, choices=GENDER_CHOICES, blank=True)
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='employee')
+    employee_id = models.CharField(max_length=20, unique=True, blank=True, null=True)
+    department_record = models.ForeignKey(
+        'Department',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='employees',
+    )
+    designation_record = models.ForeignKey(
+        'Designation',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='employees',
+    )
+    EMPLOYMENT_STATUS_CHOICES = [
+        ('active', 'Active'),
+        ('on_leave', 'On Leave'),
+        ('resigned', 'Resigned'),
+        ('terminated', 'Terminated'),
+    ]
+    employment_status = models.CharField(
+        max_length=20,
+        choices=EMPLOYMENT_STATUS_CHOICES,
+        default='active',
+    )
     department = models.CharField(max_length=100, blank=True, null=True)
     designation = models.CharField(max_length=100, blank=True, null=True)
     joining_date = models.DateField(blank=True, null=True)
@@ -54,6 +81,33 @@ class User(AbstractUser):
     def __str__(self):
         full_name = self.get_full_name()
         return full_name if full_name else self.username
+
+    def save(self, *args, **kwargs):
+        if self.designation_record_id and (
+            not self.department_record_id
+            or self.designation_record.department_id != self.department_record_id
+        ):
+            raise ValidationError(
+                {'designation_record': 'The designation must belong to the assigned department.'}
+            )
+        is_new = self.pk is None
+        super().save(*args, **kwargs)
+        if is_new and self.role == 'employee' and not self.employee_id:
+            self.employee_id = f'EMP{self.pk:06d}'
+            super().save(using=self._state.db, update_fields=['employee_id'])
+        update_fields = kwargs.get('update_fields')
+        if self.department_record_id or self.designation_record_id:
+            changed_fields = []
+            if self.department_record_id:
+                self.department = self.department_record.name
+                changed_fields.append('department')
+            if self.designation_record_id:
+                self.designation = self.designation_record.name
+                changed_fields.append('designation')
+            if changed_fields:
+                if update_fields is not None:
+                    kwargs['update_fields'] = set(update_fields) | set(changed_fields)
+                super().save(using=self._state.db, update_fields=changed_fields if update_fields is None else kwargs['update_fields'])
 
     @property
     def today_attendance_status(self):
@@ -158,6 +212,15 @@ class AttendanceCorrectionRequest(models.Model):
     reason = models.TextField()
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     created_at = models.DateTimeField(auto_now_add=True)
+    approval_notes = models.TextField(blank=True)
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='reviewed_attendance_corrections',
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ['-created_at']
@@ -208,6 +271,7 @@ class LeaveApplication(models.Model):
         ('approved', 'Approved'),
         ('rejected', 'Rejected'),
         ('withdrawn', 'Withdrawn'),
+        ('cancelled', 'Cancelled'),
     ]
     HALF_DAY_CHOICES = [
         ('full', 'Full Day'),
@@ -223,6 +287,8 @@ class LeaveApplication(models.Model):
         ('Sick', 'Sick'),
         ('Casual', 'Casual'),
         ('Paid', 'Paid'),
+        ('Earned', 'Earned'),
+        ('Unpaid', 'Unpaid'),
         ('Maternity', 'Maternity'),
         ('Paternity', 'Paternity'),
     ]
@@ -264,6 +330,19 @@ class CompanyHoliday(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.date})"
+
+
+class LeavePolicy(models.Model):
+    leave_type = models.CharField(max_length=20, choices=LeaveApplication.LEAVE_TYPE_CHOICES, unique=True)
+    annual_quota = models.PositiveSmallIntegerField(null=True, blank=True)
+    is_paid = models.BooleanField(default=True)
+    requires_document = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ['leave_type']
+
+    def __str__(self):
+        return self.get_leave_type_display()
 
 
 class Project(models.Model):
@@ -376,11 +455,12 @@ class Salary(models.Model):
         ('paid', 'Paid'),
         ('pending', 'Pending'),
         ('processing', 'Processing'),
+        ('cancelled', 'Cancelled'),
     ]
     employee = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='salaries')
     month = models.IntegerField()
     year = models.IntegerField()
-    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     paid_date = models.DateField(null=True, blank=True)
     remarks = models.TextField(blank=True)
@@ -400,7 +480,7 @@ class SalaryComponent(models.Model):
     salary = models.ForeignKey(Salary, on_delete=models.CASCADE, related_name='components')
     component_type = models.CharField(max_length=20, choices=COMPONENT_TYPES)
     name = models.CharField(max_length=120)
-    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
     formula = models.TextField(blank=True)
     dates = models.JSONField(default=list, blank=True)
     remarks = models.TextField(blank=True)
@@ -411,6 +491,109 @@ class SalaryComponent(models.Model):
 
     def __str__(self):
         return f'{self.name}: {self.amount}'
+
+
+class Department(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+    description = models.TextField(blank=True)
+    head = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='headed_departments',
+    )
+    parent_department = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='child_departments',
+    )
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
+class Designation(models.Model):
+    department = models.ForeignKey(
+        Department,
+        on_delete=models.PROTECT,
+        related_name='designations',
+    )
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['department__name', 'name']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['department', 'name'],
+                name='unique_designation_per_department',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.name} · {self.department.name}'
+
+
+class SalaryStructure(models.Model):
+    employee = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='salary_structure',
+    )
+    basic_salary = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    hra = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    allowances = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    deductions = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    attendance_based = models.BooleanField(default=True)
+    effective_from = models.DateField(default=timezone.localdate)
+    is_active = models.BooleanField(default=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    @property
+    def gross_salary(self):
+        return self.basic_salary + self.hra + self.allowances
+
+    def __str__(self):
+        return f'{self.employee} · {self.effective_from}'
+
+
+class SalaryRevision(models.Model):
+    structure = models.ForeignKey(
+        SalaryStructure,
+        on_delete=models.CASCADE,
+        related_name='revisions',
+    )
+    basic_salary = models.DecimalField(max_digits=12, decimal_places=2)
+    hra = models.DecimalField(max_digits=12, decimal_places=2)
+    allowances = models.DecimalField(max_digits=12, decimal_places=2)
+    deductions = models.DecimalField(max_digits=12, decimal_places=2)
+    attendance_based = models.BooleanField(default=True)
+    effective_from = models.DateField()
+    reason = models.CharField(max_length=255, blank=True)
+    revised_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='salary_revisions_made',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-effective_from', '-created_at']
+
+    @property
+    def gross_salary(self):
+        return self.basic_salary + self.hra + self.allowances
 
 
 class PayrollTaxDocument(models.Model):
@@ -459,3 +642,36 @@ class EmployeeDocument(models.Model):
 
     def __str__(self):
         return f"{self.employee.username} - {self.title}"
+
+
+class EmployeeActivity(models.Model):
+    ACTIVITY_TYPES = [
+        ('created', 'Employee created'),
+        ('updated', 'Profile updated'),
+        ('status_changed', 'Employment status changed'),
+        ('deactivated', 'Account deactivated'),
+        ('reactivated', 'Account reactivated'),
+        ('document_uploaded', 'Document uploaded'),
+        ('document_deleted', 'Document deleted'),
+    ]
+    employee = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='management_activities',
+    )
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='employee_management_actions',
+    )
+    activity_type = models.CharField(max_length=30, choices=ACTIVITY_TYPES)
+    description = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at', '-pk']
+
+    def __str__(self):
+        return f'{self.get_activity_type_display()}: {self.employee}'

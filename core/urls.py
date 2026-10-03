@@ -1,5 +1,4 @@
 from django.urls import path
-from .views_api import EmployeeListAPIView
 from .views import (
     EmployeeDashboardView,
     EmployeeCheckInView,
@@ -30,9 +29,6 @@ from .views import (
 )
 
 urlpatterns = [
-    # APIs
-    path('employees/', EmployeeListAPIView.as_view(), name='api_employee_list'),
-    
     # Employee Views
     path('dashboard/', EmployeeDashboardView.as_view(), name='employee_dashboard'),
     path('check-in/', EmployeeCheckInView.as_view(), name='employee_check_in'),
@@ -62,4 +58,3 @@ urlpatterns = [
     path('calendar/', EmployeeCalendarView.as_view(), name='employee_calendar'),
     path('projects/', EmployeeProjectsView.as_view(), name='employee_projects'),
 ]
-

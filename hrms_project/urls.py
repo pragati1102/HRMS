@@ -16,10 +16,15 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
+from django.views.generic import RedirectView
+from core.views_api import EmployeeListAPIView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('api/', include('core.urls')),
+    path('api/employees/', EmployeeListAPIView.as_view(), name='api_employee_list'),
+    # Keep the old employee dashboard URL working for existing bookmarks.
+    path('api/dashboard/', RedirectView.as_view(pattern_name='employee_dashboard', permanent=False)),
+    path('employee/', include('core.urls')),
     path('', include('admin_dashboard.urls')),
 ]
 

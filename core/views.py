@@ -9,6 +9,9 @@ from collections import defaultdict
 from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
+import logging
+import smtplib
+from django.core.mail import send_mail
 from django.contrib.auth.views import PasswordChangeView
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.views.generic import TemplateView
@@ -17,6 +20,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse, reverse_lazy
 from django.http import FileResponse, Http404, HttpResponse
 from django.core.paginator import Paginator
+from django.db import transaction
 from django.db.models import Q
 from django.contrib import messages
 from django.db.models import Q, Sum
@@ -31,8 +35,10 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 from .forms import EmployeeProfileForm
-from .models import User, Attendance, AttendanceCorrectionRequest, CompanyHoliday, WorkLog, LeaveApplication, Salary, SalaryComponent, PayrollTaxDocument, Project, ProjectAssignment, EmployeeDocument
+from .models import User, Attendance, AttendanceCorrectionRequest, CompanyHoliday, WorkLog, LeaveApplication, LeavePolicy, Salary, SalaryComponent, PayrollTaxDocument, Project, ProjectAssignment, EmployeeDocument
 from .permissions import AdminRoleRequiredMixin, EmployeeRoleRequiredMixin
+
+logger = logging.getLogger(__name__)
 
 def get_leave_days_in_range(employee, start_limit, end_limit):
     """
@@ -75,9 +81,20 @@ def get_leave_quota_summary(employee, year):
         'Casual': employee.casual_leave_quota,
         'Sick': employee.sick_leave_quota,
         'Paid': employee.paid_leave_quota,
+        'Earned': None,
+        'Unpaid': None,
+        'Maternity': None,
+        'Paternity': None,
+    }
+    policies = {
+        policy.leave_type: policy
+        for policy in LeavePolicy.objects.filter(leave_type__in=quota_fields)
     }
     summaries = []
     for leave_type, quota in quota_fields.items():
+        policy = policies.get(leave_type)
+        if quota is None and policy:
+            quota = policy.annual_quota
         used = Decimal('0')
         pending = Decimal('0')
         applications = LeaveApplication.objects.filter(
@@ -104,6 +121,30 @@ def get_leave_quota_summary(employee, year):
             'available': available,
         })
     return summaries
+
+
+def send_leave_status_email(application):
+    if not application.employee.email:
+        return
+    status_label = application.get_status_display()
+    reviewer = application.approved_by.get_full_name() or application.approved_by.username
+    notes = application.approval_notes or 'No additional comments were provided.'
+    try:
+        send_mail(
+            subject=f'Leave request {status_label.lower()}',
+            message=(
+                f'Hello {application.employee.get_full_name() or application.employee.username},\n\n'
+                f'Your {application.get_leave_type_display()} leave request from '
+                f'{application.start_date:%b %d, %Y} to {application.end_date:%b %d, %Y} '
+                f'has been {status_label.lower()} by {reviewer}.\n\n'
+                f'Comments: {notes}'
+            ),
+            from_email=None,
+            recipient_list=[application.employee.email],
+            fail_silently=False,
+        )
+    except (smtplib.SMTPException, OSError):
+        logger.exception('Could not send leave status email for application %s', application.pk)
 
 
 def get_next_worklog_slot(employee, date_value):
@@ -380,6 +421,13 @@ class EmployeeAttendanceCorrectionView(EmployeeRoleRequiredMixin, View):
         if correction_date > timezone.localdate():
             messages.error(request, 'Attendance corrections cannot be requested for a future date.')
             return redirect('employee_attendance')
+        if AttendanceCorrectionRequest.objects.filter(
+            employee=request.user,
+            date=correction_date,
+            status='pending',
+        ).exists():
+            messages.error(request, 'A correction request for this date is already awaiting review.')
+            return redirect('employee_attendance')
 
         AttendanceCorrectionRequest.objects.create(
             employee=request.user,
@@ -501,9 +549,29 @@ class EmployeeAttendanceView(EmployeeRoleRequiredMixin, TemplateView):
         correction_dates = set(
             request.date for request in user.attendance_corrections.filter(status='pending')
         )
+        holiday_dates = set(CompanyHoliday.objects.filter(
+            date__year=selected_year,
+            date__month=selected_month,
+        ).values_list('date', flat=True))
         now = timezone.now()
         for attendance in attendances:
             work_seconds = get_attendance_work_seconds(attendance, now=now)
+            is_past_workday = (
+                attendance.date < today
+                and attendance.date.weekday() < 5
+                and attendance.date not in holiday_dates
+            )
+            attendance.missing_check_in = (
+                is_past_workday
+                and attendance.status in {'present', 'half_day'}
+                and not attendance.check_in
+            )
+            attendance.missing_check_out = (
+                is_past_workday
+                and attendance.status in {'present', 'half_day'}
+                and bool(attendance.check_in)
+                and not attendance.check_out
+            )
             total_work_seconds += work_seconds
             if attendance.check_in and attendance.check_out:
                 days_with_hours += 1
@@ -530,7 +598,10 @@ class EmployeeAttendanceView(EmployeeRoleRequiredMixin, TemplateView):
         # Today's attendance record
         today_attendance = Attendance.objects.filter(employee=user, date=today).first()
         current_work_seconds = get_attendance_work_seconds(today_attendance, now=timezone.now()) if today_attendance else 0
-        
+        correction_requests = user.attendance_corrections.select_related(
+            'reviewed_by'
+        ).order_by('-created_at')[:20]
+
         context.update({
             'attendances': attendances,
             'selected_month': selected_month,
@@ -545,6 +616,7 @@ class EmployeeAttendanceView(EmployeeRoleRequiredMixin, TemplateView):
             'overtime_time': format_duration(total_overtime_seconds),
             'attendance_rows': attendance_rows,
             'pending_correction_dates': correction_dates,
+            'correction_requests': correction_requests,
             'current_time': timezone.localtime(),
             'months': months,
             'years': years,
@@ -811,7 +883,7 @@ class EmployeeLeavesView(EmployeeRoleRequiredMixin, TemplateView):
         pending_applications_count = LeaveApplication.objects.filter(employee=user, status='pending').count()
         
         leave_type_filter = self.request.GET.get('status', 'all').lower()
-        if leave_type_filter not in {'all', 'pending', 'approved', 'rejected'}:
+        if leave_type_filter not in {'all', 'pending', 'approved', 'rejected', 'withdrawn', 'cancelled'}:
             leave_type_filter = 'all'
         search_query = self.request.GET.get('q', '').strip()[:100]
         applications = LeaveApplication.objects.filter(employee=user).select_related('approved_by', 'handover_contact')
@@ -830,7 +902,14 @@ class EmployeeLeavesView(EmployeeRoleRequiredMixin, TemplateView):
         }
         leave_filter_counts = {
             status: LeaveApplication.objects.filter(employee=user, status=status).count()
-            for status in ['pending', 'approved', 'rejected']
+            for status in ['pending', 'approved', 'rejected', 'withdrawn', 'cancelled']
+        }
+        leave_policy_settings = {
+            policy.leave_type: {
+                'requires_document': policy.requires_document,
+                'is_paid': policy.is_paid,
+            }
+            for policy in LeavePolicy.objects.all()
         }
         
         context.update({
@@ -846,6 +925,7 @@ class EmployeeLeavesView(EmployeeRoleRequiredMixin, TemplateView):
             'colleagues': User.objects.filter(role='employee', is_active=True).exclude(pk=user.pk).order_by('first_name', 'last_name'),
             'holiday_dates': [date.isoformat() for date in CompanyHoliday.objects.filter(date__year=today.year).values_list('date', flat=True)],
             'leave_types': [choice[0] for choice in LeaveApplication.LEAVE_TYPE_CHOICES],
+            'leave_policy_settings': leave_policy_settings,
             'today': today,
         })
         return context
@@ -855,6 +935,7 @@ class EmployeeApplyLeaveView(EmployeeRoleRequiredMixin, View):
     """
     Handles submission of new leave applications. Validates start and end dates.
     """
+    @transaction.atomic
     def post(self, request):
         start_date_str = request.POST.get('start_date')
         end_date_str = request.POST.get('end_date')
@@ -895,7 +976,13 @@ class EmployeeApplyLeaveView(EmployeeRoleRequiredMixin, View):
                 messages.error(request, "Half-day requests must cover a single date.")
                 return redirect('employee_leaves')
 
-            if leave_type in {'Sick', 'Maternity', 'Paternity'} and not supporting_document:
+            policy = LeavePolicy.objects.filter(leave_type=leave_type).first()
+            requires_document = (
+                policy.requires_document
+                if policy
+                else leave_type in {'Sick', 'Maternity', 'Paternity'}
+            )
+            if requires_document and not supporting_document:
                 messages.error(request, "A supporting document is required for this leave type.")
                 return redirect('employee_leaves')
 
@@ -911,19 +998,46 @@ class EmployeeApplyLeaveView(EmployeeRoleRequiredMixin, View):
                 messages.error(request, "The selected dates contain no working days.")
                 return redirect('employee_leaves')
 
-            quota_field = {'Casual': 'casual_leave_quota', 'Sick': 'sick_leave_quota', 'Paid': 'paid_leave_quota'}.get(leave_type)
-            quota = getattr(request.user, quota_field) if quota_field else None
+            employee = User.objects.select_for_update().get(pk=request.user.pk)
+            overlapping_application = LeaveApplication.objects.filter(
+                employee=employee,
+                status__in=['approved', 'pending'],
+                start_date__lte=end_date,
+                end_date__gte=start_date,
+            ).exists()
+            if overlapping_application:
+                messages.error(request, "Your selected dates overlap another pending or approved leave request.")
+                return redirect('employee_leaves')
+
+            quota_field = {
+                'Casual': 'casual_leave_quota',
+                'Sick': 'sick_leave_quota',
+                'Paid': 'paid_leave_quota',
+            }.get(leave_type)
+            quota = getattr(employee, quota_field) if quota_field else None
+            if quota is None and policy:
+                quota = policy.annual_quota
             if quota is not None:
                 existing_units = Decimal('0')
                 existing_applications = LeaveApplication.objects.filter(
-                    employee=request.user,
+                    employee=employee,
                     leave_type=leave_type,
                     status__in=['approved', 'pending'],
-                    start_date__year=start_date.year,
+                    start_date__lte=datetime.date(start_date.year, 12, 31),
+                    end_date__gte=datetime.date(start_date.year, 1, 1),
                 )
                 for application in existing_applications:
-                    existing_holidays = set(CompanyHoliday.objects.filter(date__range=(application.start_date, application.end_date)).values_list('date', flat=True))
-                    existing_units += get_leave_units(application.start_date, application.end_date, application.half_day_session, existing_holidays)
+                    overlap_start = max(application.start_date, datetime.date(start_date.year, 1, 1))
+                    overlap_end = min(application.end_date, datetime.date(start_date.year, 12, 31))
+                    existing_holidays = set(CompanyHoliday.objects.filter(
+                        date__range=(overlap_start, overlap_end)
+                    ).values_list('date', flat=True))
+                    existing_units += get_leave_units(
+                        overlap_start,
+                        overlap_end,
+                        application.half_day_session,
+                        existing_holidays,
+                    )
                 available_units = max(Decimal('0'), Decimal(quota) - existing_units)
                 if requested_units > available_units:
                     messages.error(request, f"This request exceeds your available {leave_type.lower()} leave balance ({available_units} days remaining).")
@@ -937,7 +1051,7 @@ class EmployeeApplyLeaveView(EmployeeRoleRequiredMixin, View):
                     return redirect('employee_leaves')
                 
             LeaveApplication.objects.create(
-                employee=request.user,
+                employee=employee,
                 start_date=start_date,
                 end_date=end_date,
                 reason=reason,
@@ -957,12 +1071,16 @@ class EmployeeApplyLeaveView(EmployeeRoleRequiredMixin, View):
 class EmployeeWithdrawLeaveView(EmployeeRoleRequiredMixin, View):
     def post(self, request, pk):
         application = get_object_or_404(LeaveApplication, pk=pk, employee=request.user)
-        if application.status != 'pending':
-            messages.error(request, "Only pending leave applications can be withdrawn.")
+        if application.status not in {'pending', 'approved'}:
+            messages.error(request, "Only pending or future approved leave applications can be cancelled.")
+        elif application.start_date < timezone.localdate() or (
+            application.status == 'approved' and application.start_date <= timezone.localdate()
+        ):
+            messages.error(request, "Leave that has already started cannot be cancelled.")
         else:
-            application.status = 'withdrawn'
+            application.status = 'cancelled' if application.status == 'approved' else 'withdrawn'
             application.save(update_fields=['status'])
-            messages.success(request, "Leave application withdrawn.")
+            messages.success(request, "Leave application cancelled.")
         return redirect('employee_leaves')
 
 
@@ -1099,7 +1217,10 @@ def get_salary_attendance_summary(salary, deductions):
         employee=salary.employee,
         date__range=(month_start, month_end),
     )
-    worked_days = attendances.filter(status__in=['present', 'half_day']).count()
+    worked_days = (
+        Decimal(attendances.filter(status='present').count())
+        + Decimal(attendances.filter(status='half_day').count()) * Decimal('0.5')
+    )
     leaves_taken = Decimal('0')
     leave_applications = LeaveApplication.objects.filter(
         employee=salary.employee,
@@ -1655,4 +1776,3 @@ class EmployeeProjectsView(EmployeeRoleRequiredMixin, TemplateView):
             ],
         })
         return context
-

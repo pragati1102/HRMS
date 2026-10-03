@@ -22,7 +22,10 @@ class EmployeeListAPIView(ListAPIView):
             queryset = queryset.filter(
                 Q(first_name__icontains=search_query) |
                 Q(last_name__icontains=search_query) |
-                Q(username__icontains=search_query)
+                Q(username__icontains=search_query) |
+                Q(email__icontains=search_query) |
+                Q(personal_email__icontains=search_query) |
+                Q(employee_id__icontains=search_query)
             )
             
         # Filter by department
@@ -34,5 +37,9 @@ class EmployeeListAPIView(ListAPIView):
         role = self.request.query_params.get('role', '').strip()
         if role:
             queryset = queryset.filter(role=role)
+
+        employment_status = self.request.query_params.get('employment_status', '').strip()
+        if employment_status in dict(User.EMPLOYMENT_STATUS_CHOICES):
+            queryset = queryset.filter(employment_status=employment_status)
             
         return queryset

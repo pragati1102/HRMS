@@ -1,0 +1,84 @@
+{% extends 'admin_dashboard/base.html' %}
+{% block title %}Payroll Management | Antigravity HRMS{% endblock %}
+{% block active_payroll %}active{% endblock %}
+{% block header_content %}
+<h1>Payroll Management</h1>
+<p class="text-muted mb-0">Manage salary structures, prepare monthly payroll, and review payroll reports.</p>
+{% endblock %}
+{% block content %}
+<div class="row g-3 mb-4">
+    <div class="col-6 col-xl-4"><div class="glass-card"><div class="small text-secondary">Salary structures</div><div class="fs-4 fw-bold">{{ structure_count }}</div></div></div>
+    <div class="col-6 col-xl-4"><div class="glass-card"><div class="small text-secondary">Awaiting payment · {{ selected_month|stringformat:"02d" }}/{{ selected_year }}</div><div class="fs-4 fw-bold text-warning">{{ pending_count }}</div></div></div>
+    <div class="col-12 col-xl-4"><div class="glass-card"><div class="small text-secondary">Paid · {{ selected_month|stringformat:"02d" }}/{{ selected_year }}</div><div class="fs-4 fw-bold text-success">{{ paid_count }}</div></div></div>
+</div>
+
+<section class="glass-card mb-4">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
+        <div><h2 class="h5 fw-bold mb-1">Monthly payroll run</h2><p class="small text-secondary mb-0">Attendance adjustments use recorded Absent/Half Day entries and approved Unpaid leave. Unrecorded days are not treated as absences.</p></div>
+        <div class="d-flex gap-2">
+            <form method="get" class="d-flex gap-2">
+                <label class="visually-hidden" for="payroll-month">Month</label>
+                <select class="form-select form-select-sm" id="payroll-month" name="month">{% for month in months %}<option value="{{ month.0 }}" {% if month.0 == selected_month %}selected{% endif %}>{{ month.1 }}</option>{% endfor %}</select>
+                <label class="visually-hidden" for="payroll-year">Year</label>
+                <select class="form-select form-select-sm" id="payroll-year" name="year">{% for year in years %}<option value="{{ year }}" {% if year == selected_year %}selected{% endif %}>{{ year }}</option>{% endfor %}</select>
+                <button class="btn btn-outline-premium btn-sm" type="submit">View</button>
+            </form>
+            <a class="btn btn-outline-premium btn-sm" href="{% url 'payroll_report_export' %}?month={{ selected_month }}&amp;year={{ selected_year }}"><i class="bi bi-download me-1"></i>Report CSV</a>
+        </div>
+    </div>
+    <form method="post" class="d-flex flex-wrap gap-2 align-items-center">
+        {% csrf_token %}
+        <input type="hidden" name="month" value="{{ selected_month }}">
+        <input type="hidden" name="year" value="{{ selected_year }}">
+        <button class="btn btn-premium" type="submit" name="action" value="process"><i class="bi bi-calculator me-1"></i>Prepare payroll</button>
+        <span class="small text-secondary">Existing payroll rows are preserved and will not be duplicated.</span>
+    </form>
+</section>
+
+<section class="glass-card mb-4">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
+        <div><h2 class="h5 fw-bold mb-1">Salary structures</h2><p class="small text-secondary mb-0">Basic salary, HRA, allowances, monthly deductions, and effective revisions.</p></div>
+        <a class="btn btn-premium btn-sm" href="{% url 'salary_structure_create' %}"><i class="bi bi-plus-lg me-1"></i>Add structure</a>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover align-middle">
+            <thead class="table-light text-uppercase small"><tr><th>Employee</th><th>Basic</th><th>HRA</th><th>Allowances</th><th>Deductions</th><th>Gross</th><th>Effective</th><th>Proration</th><th></th></tr></thead>
+            <tbody>
+                {% for structure in structures %}
+                <tr>
+                    <td>{{ structure.employee.get_full_name|default:structure.employee.username }}<small class="text-secondary d-block">{{ structure.employee.department|default:"Department not set" }}</small></td>
+                    <td>{{ structure.basic_salary|floatformat:2 }}</td><td>{{ structure.hra|floatformat:2 }}</td><td>{{ structure.allowances|floatformat:2 }}</td><td>{{ structure.deductions|floatformat:2 }}</td><td class="fw-bold">{{ structure.gross_salary|floatformat:2 }}</td><td>{{ structure.effective_from }}</td><td>{% if structure.attendance_based %}Attendance-based{% else %}Fixed monthly{% endif %}</td>
+                    <td><a class="btn btn-outline-premium btn-sm" href="{% url 'salary_structure_edit' structure.pk %}">Revise</a></td>
+                </tr>
+                {% empty %}<tr><td colspan="9" class="text-center text-secondary py-4">No salary structures configured yet.</td></tr>{% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="glass-card">
+    <h2 class="h5 fw-bold mb-3">Payroll history · {{ selected_month|stringformat:"02d" }}/{{ selected_year }}</h2>
+    <div class="table-responsive">
+        <table class="table table-hover align-middle">
+            <thead class="table-light text-uppercase small"><tr><th>Employee</th><th>Gross</th><th>Deductions</th><th>Net pay</th><th>Status</th><th>Paid on</th><th>Actions</th></tr></thead>
+            <tbody>
+                {% for row in rows %}
+                <tr>
+                    <td>{{ row.salary.employee.get_full_name|default:row.salary.employee.username }}<small class="text-secondary d-block">{{ row.salary.employee.employee_id }}</small></td>
+                    <td>{{ row.gross|floatformat:2 }}</td><td>{{ row.total_deductions|floatformat:2 }}</td><td class="fw-bold">{{ row.net_pay|floatformat:2 }}</td>
+                    <td><span class="badge {% if row.salary.status == 'paid' %}bg-success-subtle text-success{% else %}bg-warning-subtle text-warning{% endif %}">{{ row.salary.get_status_display }}</span></td><td>{{ row.salary.paid_date|date:"M d, Y"|default:"—" }}</td>
+                    <td>
+                        <div class="d-flex flex-wrap gap-2">
+                            {% if row.salary.status == 'pending' or row.salary.status == 'processing' %}
+                            <form method="post">{% csrf_token %}<input type="hidden" name="month" value="{{ selected_month }}"><input type="hidden" name="year" value="{{ selected_year }}"><input type="hidden" name="salary_id" value="{{ row.salary.pk }}"><button class="btn btn-success btn-sm" type="submit" name="action" value="mark_paid">Mark paid</button></form>
+                            {% endif %}
+                            {% if row.salary.status == 'paid' %}<a class="btn btn-outline-premium btn-sm" href="{% url 'admin_payslip_download' row.salary.pk %}">PDF</a>{% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% empty %}<tr><td colspan="7" class="text-center text-secondary py-4">No payroll records for this period. Prepare payroll to generate records from effective salary structures.</td></tr>{% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

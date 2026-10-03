@@ -1,132 +1,157 @@
 {% extends 'admin_dashboard/base.html' %}
 
-{% block title %}Employees List | HRMS Dashboard{% endblock %}
+{% block title %}Employee Directory | Antigravity HRMS{% endblock %}
 {% block active_employees %}active{% endblock %}
 
 {% block header_content %}
-<h1>Employees</h1>
-<p class="text-muted mb-0">Manage employee accounts, track attendance, and filter user profiles.</p>
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-3">
+    <div>
+        <h1>Employee Directory</h1>
+        <p class="text-muted mb-0">Manage employee profiles, employment details, and access.</p>
+    </div>
+    <a href="{% url 'employee_create' %}" class="btn btn-premium"><i class="bi bi-person-plus-fill me-2"></i>Add Employee</a>
+</div>
 {% endblock %}
 
 {% block content %}
-<!-- Search and Filters -->
-<div class="glass-card mb-4">
+<section class="glass-card mb-4">
     <form method="GET" class="row g-3 align-items-end">
-        <div class="col-md-4">
-            <label for="search" class="form-label fw-semibold text-secondary">Search by Name</label>
+        <input type="hidden" name="sort" value="{{ sort }}">
+        <input type="hidden" name="direction" value="{{ direction }}">
+        <div class="col-12 col-md-6 col-xl-4">
+            <label for="search" class="form-label fw-semibold text-secondary">Search employees</label>
             <div class="input-group">
-                <span class="input-group-text bg-white border-end-0 text-muted">
-                    <i class="bi bi-search"></i>
-                </span>
-                <input type="text" name="search" id="search" class="form-control border-start-0" placeholder="Search by name, email, username..." value="{{ search_query }}">
+                <span class="input-group-text bg-white text-muted"><i class="bi bi-search"></i></span>
+                <input type="search" name="search" id="search" class="form-control" placeholder="Name, employee ID, username, or email" value="{{ search_query }}">
             </div>
         </div>
-        
-        <div class="col-md-3">
-            <label for="department" class="form-label fw-semibold text-secondary">Filter by Department</label>
+        <div class="col-12 col-sm-6 col-xl-2">
+            <label for="department" class="form-label fw-semibold text-secondary">Department</label>
             <select name="department" id="department" class="form-select">
-                <option value="">All Departments</option>
-                {% for dept in departments %}
-                    <option value="{{ dept }}" {% if selected_department == dept %}selected{% endif %}>{{ dept|title }}</option>
+                <option value="">All departments</option>
+                {% for department in departments %}
+                    <option value="{{ department }}" {% if selected_department == department %}selected{% endif %}>{{ department }}</option>
                 {% endfor %}
             </select>
         </div>
-
-        <div class="col-md-3">
-            <label for="role" class="form-label fw-semibold text-secondary">Filter by Role</label>
-            <select name="role" id="role" class="form-select">
-                <option value="">All Roles</option>
-                <option value="admin" {% if selected_role == 'admin' %}selected{% endif %}>Admin</option>
-                <option value="employee" {% if selected_role == 'employee' %}selected{% endif %}>Employee</option>
+        <div class="col-12 col-sm-6 col-xl-2">
+            <label for="status" class="form-label fw-semibold text-secondary">Employment status</label>
+            <select name="status" id="status" class="form-select">
+                <option value="">All statuses</option>
+                {% for value, label in employment_statuses %}
+                    <option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
             </select>
         </div>
-
-        <div class="col-md-2 d-flex gap-2">
-            <button type="submit" class="btn btn-premium w-100">
-                <i class="bi bi-funnel-fill me-1"></i> Apply
-            </button>
-            <a href="{% url 'employee_list' %}" class="btn btn-outline-premium w-100 d-flex align-items-center justify-content-center" title="Reset Filters">
-                <i class="bi bi-arrow-clockwise"></i>
-            </a>
+        <div class="col-12 col-sm-6 col-xl-2">
+            <label for="account_status" class="form-label fw-semibold text-secondary">Account access</label>
+            <select name="account_status" id="account_status" class="form-select">
+                <option value="">All accounts</option>
+                <option value="active" {% if selected_account_status == 'active' %}selected{% endif %}>Can sign in</option>
+                <option value="deactivated" {% if selected_account_status == 'deactivated' %}selected{% endif %}>Deactivated</option>
+            </select>
+        </div>
+        <div class="col-12 col-sm-6 col-xl-2 d-flex gap-2">
+            <button type="submit" class="btn btn-premium flex-grow-1"><i class="bi bi-funnel-fill me-1"></i>Filter</button>
+            <a href="{% url 'employee_list' %}" class="btn btn-outline-premium" aria-label="Clear filters" title="Clear filters"><i class="bi bi-arrow-clockwise"></i></a>
         </div>
     </form>
-</div>
+</section>
 
-<!-- Employee List Table -->
-<div class="glass-card p-0">
+<section class="glass-card p-0 overflow-hidden">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 p-3 border-bottom">
+        <div>
+            <h2 class="h5 fw-bold mb-1">People</h2>
+            <p class="text-muted small mb-0">{{ page_obj.paginator.count }} employee{{ page_obj.paginator.count|pluralize }}{% if is_paginated %} · Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}{% endif %}</p>
+        </div>
+        {% if search_query or selected_department or selected_status or selected_account_status %}
+            <span class="badge rounded-pill bg-primary-subtle text-primary border">Filters applied</span>
+        {% endif %}
+    </div>
     <div class="table-responsive">
         <table class="table table-hover align-middle mb-0">
-            <thead>
+            <thead class="table-light">
                 <tr>
-                    <th>Name</th>
-                    <th>Role</th>
-                    <th>Department</th>
-                    <th>Designation</th>
-                    <th>Joining Date</th>
-                    <th>Today's Attendance</th>
+                    <th class="text-nowrap"><a class="text-decoration-none text-reset" href="{% querystring sort='employee_id' direction=next_sort_directions.employee_id page=None %}">Employee ID <i class="bi bi-arrow-down-up small"></i></a></th>
+                    <th class="text-nowrap"><a class="text-decoration-none text-reset" href="{% querystring sort='name' direction=next_sort_directions.name page=None %}">Employee <i class="bi bi-arrow-down-up small"></i></a></th>
+                    <th class="text-nowrap"><a class="text-decoration-none text-reset" href="{% querystring sort='department' direction=next_sort_directions.department page=None %}">Department <i class="bi bi-arrow-down-up small"></i></a></th>
+                    <th class="text-nowrap"><a class="text-decoration-none text-reset" href="{% querystring sort='designation' direction=next_sort_directions.designation page=None %}">Designation <i class="bi bi-arrow-down-up small"></i></a></th>
+                    <th class="text-nowrap">Manager</th>
+                    <th class="text-nowrap"><a class="text-decoration-none text-reset" href="{% querystring sort='joining_date' direction=next_sort_directions.joining_date page=None %}">Joining date <i class="bi bi-arrow-down-up small"></i></a></th>
+                    <th class="text-nowrap"><a class="text-decoration-none text-reset" href="{% querystring sort='status' direction=next_sort_directions.status page=None %}">Status <i class="bi bi-arrow-down-up small"></i></a></th>
                     <th class="text-end">Actions</th>
                 </tr>
             </thead>
             <tbody>
-                {% if employees %}
-                    {% for emp in employees %}
-                        <tr>
-                            <td>
-                                <div class="d-flex align-items-center gap-3">
-                                    <div class="bg-light border rounded-3 d-flex align-items-center justify-content-center" style="width: 40px; height: 40px;">
-                                        {% with avatar_user=emp avatar_emoji_size='1.35rem' %}{% include 'core/partials/avatar.html' %}{% endwith %}
-                                    </div>
-                                    <div>
-                                        <div class="fw-semibold">
-                                            <a href="{% url 'employee_detail' emp.id %}" class="text-decoration-none text-dark hover-indigo">
-                                                {{ emp.get_full_name|default:emp.username }}
-                                            </a>
-                                        </div>
-                                        <small class="text-muted">{{ emp.email|default:"No email provided" }}</small>
-                                    </div>
-                                </div>
-                            </td>
-                            <td>
-                                <span class="badge rounded-pill {% if emp.role == 'admin' %}bg-dark-subtle text-dark border{% else %}bg-light text-secondary border{% endif %} px-2.5 py-1">
-                                    {{ emp.role|title }}
-                                </span>
-                            </td>
-                            <td>{{ emp.department|default:"-"|title }}</td>
-                            <td>{{ emp.designation|default:"-"|title }}</td>
-                            <td>{{ emp.joining_date|date:"M d, Y"|default:"-" }}</td>
-                            <td>
-                                <span class="badge badge-{{ emp.today_attendance_status }} rounded-3 px-2.5 py-1.5 fw-semibold" style="font-size: 0.75rem;">
-                                    {% if emp.today_attendance_status == 'no_record' %}
-                                        No Record
-                                    {% else %}
-                                        {{ emp.today_attendance_status|title }}
-                                    {% endif %}
-                                </span>
-                            </td>
-                            <td class="text-end">
-                                <a href="{% url 'employee_detail' emp.id %}" class="btn btn-sm btn-outline-premium py-1 px-2.5" title="View Detail">
-                                    <i class="bi bi-eye-fill"></i> View
-                                </a>
-                            </td>
-                        </tr>
-                    {% endfor %}
-                {% else %}
+                {% for employee in employees %}
                     <tr>
-                        <td colspan="7" class="text-center py-5 text-muted">
-                            <i class="bi bi-people fs-1 d-block mb-3"></i>
-                            No employees found matching the criteria.
+                        <td class="text-nowrap"><span class="fw-semibold">{{ employee.employee_id|default:"Pending" }}</span></td>
+                        <td class="text-nowrap">
+                            <div class="d-flex align-items-center gap-3">
+                                <div class="bg-light border rounded-circle d-flex align-items-center justify-content-center overflow-hidden" style="width: 42px; height: 42px; flex: 0 0 42px;">
+                                    {% with avatar_user=employee %}{% include 'core/partials/avatar.html' %}{% endwith %}
+                                </div>
+                                <div>
+                                    <a href="{% url 'employee_detail' employee.id %}" class="fw-semibold text-decoration-none text-dark">{{ employee.get_full_name|default:employee.username }}</a>
+                                    <small class="text-muted d-block">{{ employee.email|default:"No work email" }}</small>
+                                </div>
+                            </div>
+                        </td>
+                        <td>{{ employee.department|default:"Not assigned" }}</td>
+                        <td>{{ employee.designation|default:"Not assigned" }}</td>
+                        <td>{% if employee.manager %}{{ employee.manager.get_full_name|default:employee.manager.username }}{% else %}Not assigned{% endif %}</td>
+                        <td class="text-nowrap">{{ employee.joining_date|date:"M d, Y"|default:"—" }}</td>
+                        <td class="text-nowrap">
+                            <span class="badge rounded-pill {% if employee.employment_status == 'active' %}bg-success-subtle text-success{% elif employee.employment_status == 'on_leave' %}bg-warning-subtle text-warning{% else %}bg-secondary-subtle text-secondary{% endif %}">{{ employee.get_employment_status_display }}</span>
+                            {% if not employee.is_active %}<span class="badge rounded-pill bg-danger-subtle text-danger d-block mt-1">Account deactivated</span>{% endif %}
+                        </td>
+                        <td class="text-end text-nowrap">
+                            <a href="{% url 'employee_detail' employee.id %}" class="btn btn-sm btn-outline-premium" aria-label="View {{ employee.get_full_name|default:employee.username }}"><i class="bi bi-eye"></i></a>
+                            <a href="{% url 'employee_edit' employee.id %}" class="btn btn-sm btn-outline-premium" aria-label="Edit {{ employee.get_full_name|default:employee.username }}"><i class="bi bi-pencil"></i></a>
+                            {% if employee.is_active %}
+                                <form method="POST" action="{% url 'employee_deactivate' employee.id %}" class="d-inline" onsubmit="return confirm('Deactivate this employee account? They will no longer be able to sign in.');">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-sm btn-outline-danger" aria-label="Deactivate {{ employee.get_full_name|default:employee.username }}"><i class="bi bi-person-dash"></i></button>
+                                </form>
+                            {% else %}
+                                {% if employee.employment_status == 'active' or employee.employment_status == 'on_leave' %}
+                                    <form method="POST" action="{% url 'employee_activate' employee.id %}" class="d-inline">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-sm btn-outline-success" aria-label="Reactivate {{ employee.get_full_name|default:employee.username }}"><i class="bi bi-person-check"></i></button>
+                                    </form>
+                                {% endif %}
+                            {% endif %}
                         </td>
                     </tr>
-                {% endif %}
+                {% empty %}
+                    <tr><td colspan="8" class="text-center py-5 text-muted"><i class="bi bi-people fs-1 d-block mb-3"></i>No employees match these filters. Try changing your search or add an employee.</td></tr>
+                {% endfor %}
             </tbody>
         </table>
     </div>
-</div>
-
-<style>
-    .hover-indigo:hover {
-        color: #4f46e5 !important;
-        text-decoration: underline !important;
-    }
-</style>
+    {% if is_paginated %}
+        <nav class="d-flex justify-content-between align-items-center flex-wrap gap-2 p-3 border-top" aria-label="Employee directory pages">
+            <span class="text-muted small">Showing {{ page_obj.start_index }}–{{ page_obj.end_index }} of {{ page_obj.paginator.count }}</span>
+            <ul class="pagination pagination-sm mb-0">
+                {% if page_obj.has_previous %}
+                    <li class="page-item"><a class="page-link" href="{% querystring page=page_obj.previous_page_number %}" aria-label="Previous page">&laquo;</a></li>
+                {% else %}
+                    <li class="page-item disabled"><span class="page-link">&laquo;</span></li>
+                {% endif %}
+                {% for page_number in page_obj.paginator.page_range %}
+                    {% if page_number == page_obj.number %}
+                        <li class="page-item active" aria-current="page"><span class="page-link">{{ page_number }}</span></li>
+                    {% elif page_number > page_obj.number|add:'-3' and page_number < page_obj.number|add:'3' %}
+                        <li class="page-item"><a class="page-link" href="{% querystring page=page_number %}">{{ page_number }}</a></li>
+                    {% endif %}
+                {% endfor %}
+                {% if page_obj.has_next %}
+                    <li class="page-item"><a class="page-link" href="{% querystring page=page_obj.next_page_number %}" aria-label="Next page">&raquo;</a></li>
+                {% else %}
+                    <li class="page-item disabled"><span class="page-link">&raquo;</span></li>
+                {% endif %}
+            </ul>
+        </nav>
+    {% endif %}
+</section>
 {% endblock %}

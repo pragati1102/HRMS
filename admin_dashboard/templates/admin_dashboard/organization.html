@@ -1,0 +1,87 @@
+{% extends 'admin_dashboard/base.html' %}
+{% block title %}Organization | Antigravity HRMS{% endblock %}
+{% block active_organization %}active{% endblock %}
+{% block header_content %}
+<h1>Department &amp; Designation Management</h1>
+<p class="text-muted mb-0">Maintain the organization hierarchy and employee assignments.</p>
+{% endblock %}
+{% block content %}
+<div class="row g-4">
+    <div class="col-12 col-xl-5">
+        <section class="glass-card mb-4">
+            <h2 class="h5 fw-bold">{{ editing_department|yesno:"Edit department,Create department" }}</h2>
+            <form method="post" class="d-grid gap-3">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="department">
+                {% if editing_department %}<input type="hidden" name="department_id" value="{{ editing_department.pk }}">{% endif %}
+                {% for field in department_form %}
+                <div>
+                    <label class="form-label small fw-semibold" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                    {% for error in field.errors %}<div class="small text-danger">{{ error }}</div>{% endfor %}
+                </div>
+                {% endfor %}
+                {% for error in department_form.non_field_errors %}<div class="small text-danger">{{ error }}</div>{% endfor %}
+                <button class="btn btn-premium" type="submit">Save department</button>
+                {% if editing_department %}<a class="btn btn-outline-premium" href="{% url 'organization_management' %}">Cancel edit</a>{% endif %}
+            </form>
+        </section>
+        <section class="glass-card">
+            <h2 class="h5 fw-bold">{{ editing_designation|yesno:"Edit designation,Create designation" }}</h2>
+            <form method="post" class="d-grid gap-3">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="designation">
+                {% if editing_designation %}<input type="hidden" name="designation_id" value="{{ editing_designation.pk }}">{% endif %}
+                {% for field in designation_form %}
+                <div>
+                    <label class="form-label small fw-semibold" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                    {% for error in field.errors %}<div class="small text-danger">{{ error }}</div>{% endfor %}
+                </div>
+                {% endfor %}
+                {% for error in designation_form.non_field_errors %}<div class="small text-danger">{{ error }}</div>{% endfor %}
+                <button class="btn btn-premium" type="submit">Save designation</button>
+                {% if editing_designation %}<a class="btn btn-outline-premium" href="{% url 'organization_management' %}">Cancel edit</a>{% endif %}
+            </form>
+        </section>
+    </div>
+    <div class="col-12 col-xl-7">
+        <section class="glass-card mb-4">
+            <h2 class="h5 fw-bold mb-3">Department directory</h2>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead class="table-light text-uppercase small"><tr><th>Department / hierarchy</th><th>Head</th><th>Employees</th><th>Status</th><th></th></tr></thead>
+                    <tbody>
+                        {% for department in departments %}
+                        <tr>
+                            <td><strong>{{ department.name }}</strong>{% if department.parent_department %}<small class="text-secondary d-block">Reports to {{ department.parent_department.name }}</small>{% endif %}</td>
+                            <td>{% if department.head %}{{ department.head.get_full_name|default:department.head.username }}{% else %}Not assigned{% endif %}</td>
+                            <td>{{ department.employee_count }}</td>
+                            <td><span class="badge {% if department.is_active %}bg-success-subtle text-success{% else %}bg-secondary-subtle text-secondary{% endif %}">{% if department.is_active %}Active{% else %}Inactive{% endif %}</span></td>
+                            <td><a class="btn btn-outline-premium btn-sm" href="?department={{ department.pk }}">Edit</a></td>
+                        </tr>
+                        {% empty %}<tr><td colspan="5" class="text-center text-secondary py-4">No departments configured.</td></tr>{% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        <section class="glass-card">
+            <h2 class="h5 fw-bold mb-3">Designations</h2>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead class="table-light text-uppercase small"><tr><th>Designation</th><th>Department</th><th>Employees</th><th>Status</th><th></th></tr></thead>
+                    <tbody>
+                        {% for designation in designations %}
+                        <tr>
+                            <td>{{ designation.name }}</td><td>{{ designation.department.name }}</td><td>{{ designation.employee_count }}</td>
+                            <td>{% if designation.is_active %}Active{% else %}Inactive{% endif %}</td>
+                            <td><a class="btn btn-outline-premium btn-sm" href="?designation={{ designation.pk }}">Edit</a></td>
+                        </tr>
+                        {% empty %}<tr><td colspan="5" class="text-center text-secondary py-4">No designations configured.</td></tr>{% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+</div>
+{% endblock %}

@@ -20,7 +20,7 @@
                 {% for application in pending_applications %}
                     <tr>
                         <td class="text-nowrap"><strong>{{ application.employee.get_full_name|default:application.employee.username }}</strong><small class="text-secondary d-block">Manager: {% if application.employee.manager %}{{ application.employee.manager.get_full_name|default:application.employee.manager.username }}{% else %}Not assigned{% endif %}</small></td>
-                        <td class="text-nowrap">{{ application.leave_type }}<small class="text-secondary d-block">{{ application.get_half_day_session_display }}</small></td>
+                        <td class="text-nowrap">{{ application.get_leave_type_display }}<small class="text-secondary d-block">{{ application.duration_days|floatformat:"-1" }} working day{{ application.duration_days|pluralize }} · {{ application.get_half_day_session_display }}</small></td>
                         <td class="text-nowrap">{{ application.start_date|date:"M d, Y" }}<small class="text-secondary d-block">to {{ application.end_date|date:"M d, Y" }}</small></td>
                         <td style="min-width: 180px; max-width: 280px;">{{ application.reason }}{% if application.handover_contact %}<small class="text-secondary d-block">Handover: {{ application.handover_contact.get_full_name|default:application.handover_contact.username }}</small>{% endif %}</td>
                         <td>{% if application.supporting_document %}<a href="{% url 'admin_leave_document' application.id %}">Download</a>{% else %}—{% endif %}</td>

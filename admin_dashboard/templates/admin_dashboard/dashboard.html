@@ -1,0 +1,444 @@
+{% extends 'admin_dashboard/base.html' %}
+
+{% block title %}Admin Dashboard | Antigravity HRMS{% endblock %}
+{% block active_admin_dashboard %}active{% endblock %}
+
+{% block header_content %}
+<h1>Admin Dashboard</h1>
+<p class="text-muted mb-0">Workforce overview for {{ today|date:"l, F j, Y" }}.</p>
+{% endblock %}
+
+{% block content %}
+<style>
+    .dashboard-kpi { min-height: 142px; }
+    .dashboard-chart { min-height: 370px; }
+    .dashboard-chart-canvas { height: 280px; position: relative; }
+    .dashboard-chart-canvas canvas { max-height: 280px; }
+    .dashboard-empty { color: #64748b; font-size: .9rem; text-align: center; padding: 5rem 1rem; }
+    .dashboard-avatar { width: 38px; height: 38px; flex: 0 0 38px; }
+    .dashboard-timeline-icon { width: 38px; height: 38px; flex: 0 0 38px; }
+    .dashboard-section-card { height: 100%; }
+    @media (max-width: 767.98px) {
+        .dashboard-chart { min-height: 330px; }
+        .dashboard-chart-canvas { height: 240px; }
+        .dashboard-chart-canvas canvas { max-height: 240px; }
+    }
+</style>
+
+<section aria-labelledby="workforce-kpis" class="mb-4">
+    <h2 id="workforce-kpis" class="visually-hidden">Workforce key performance indicators</h2>
+    <div class="row g-3">
+        <div class="col-12 col-sm-6 col-xl-4">
+            <article class="glass-card dashboard-kpi">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div><p class="text-muted fw-semibold mb-2">Total Employees</p><p class="display-6 fw-bold mb-0">{{ total_employee_count }}</p></div>
+                    <span class="rounded-3 bg-primary-subtle text-primary p-3"><i class="bi bi-people-fill fs-5"></i></span>
+                </div>
+                <p class="small text-muted mb-0 mt-3">Employee accounts, including inactive accounts</p>
+            </article>
+        </div>
+        <div class="col-12 col-sm-6 col-xl-4">
+            <article class="glass-card dashboard-kpi">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div><p class="text-muted fw-semibold mb-2">Active Employees</p><p class="display-6 fw-bold mb-0">{{ active_employee_count }}</p></div>
+                    <span class="rounded-3 bg-success-subtle text-success p-3"><i class="bi bi-person-check-fill fs-5"></i></span>
+                </div>
+                <a href="{% url 'employee_list' %}?role=employee" class="small text-decoration-none mt-3 d-inline-block">View employees <i class="bi bi-arrow-right"></i></a>
+            </article>
+        </div>
+        <div class="col-12 col-sm-6 col-xl-4">
+            <article class="glass-card dashboard-kpi">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div><p class="text-muted fw-semibold mb-2">Present Today</p><p class="display-6 fw-bold mb-0">{{ present_count }}</p></div>
+                    <span class="rounded-3 bg-success-subtle text-success p-3"><i class="bi bi-person-check fs-5"></i></span>
+                </div>
+                <p class="small text-muted mb-0 mt-3">{{ half_day_count }} half-day record{{ half_day_count|pluralize }} recorded today</p>
+            </article>
+        </div>
+        <div class="col-12 col-sm-6 col-xl-4">
+            <article class="glass-card dashboard-kpi">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div><p class="text-muted fw-semibold mb-2">Absent Today</p><p class="display-6 fw-bold mb-0">{{ absent_count }}</p></div>
+                    <span class="rounded-3 bg-danger-subtle text-danger p-3"><i class="bi bi-person-x-fill fs-5"></i></span>
+                </div>
+                <p class="small text-muted mb-0 mt-3">Based on recorded attendance</p>
+            </article>
+        </div>
+        <div class="col-12 col-sm-6 col-xl-4">
+            <article class="glass-card dashboard-kpi">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div><p class="text-muted fw-semibold mb-2">Employees on Leave</p><p class="display-6 fw-bold mb-0">{{ employees_on_leave }}</p></div>
+                    <span class="rounded-3 bg-warning-subtle text-warning p-3"><i class="bi bi-calendar2-minus fs-5"></i></span>
+                </div>
+                <p class="small text-muted mb-0 mt-3">Approved leave or leave attendance recorded today</p>
+            </article>
+        </div>
+        <div class="col-12 col-sm-6 col-xl-4">
+            <article class="glass-card dashboard-kpi">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div><p class="text-muted fw-semibold mb-2">Late Arrivals</p><p class="display-6 fw-bold mb-0">{{ late_arrival_count }}</p></div>
+                    <span class="rounded-3 bg-warning-subtle text-warning p-3"><i class="bi bi-alarm fs-5"></i></span>
+                </div>
+                <p class="small text-muted mb-0 mt-3">Check-in after 9:15 AM, per attendance policy</p>
+            </article>
+        </div>
+        <div class="col-12 col-sm-6 col-xl-4">
+            <article class="glass-card dashboard-kpi">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div><p class="text-muted fw-semibold mb-2">Pending Leave Requests</p><p class="display-6 fw-bold mb-0">{{ pending_leave_count }}</p></div>
+                    <span class="rounded-3 bg-warning-subtle text-warning p-3"><i class="bi bi-calendar2-week-fill fs-5"></i></span>
+                </div>
+                <a href="{% url 'leave_approvals' %}" class="small text-decoration-none mt-3 d-inline-block">Review requests <i class="bi bi-arrow-right"></i></a>
+            </article>
+        </div>
+        <div class="col-12 col-sm-6 col-xl-4">
+            <article class="glass-card dashboard-kpi">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div><p class="text-muted fw-semibold mb-2">New Joiners This Month</p><p class="display-6 fw-bold mb-0">{{ new_joiner_count }}</p></div>
+                    <span class="rounded-3 bg-primary-subtle text-primary p-3"><i class="bi bi-person-plus-fill fs-5"></i></span>
+                </div>
+                <p class="small text-muted mb-0 mt-3">{{ today|date:"F Y" }}</p>
+            </article>
+        </div>
+        <div class="col-12 col-sm-6 col-xl-4">
+            <article class="glass-card dashboard-kpi">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div><p class="text-muted fw-semibold mb-2">Total Departments</p><p class="display-6 fw-bold mb-0">{{ department_count }}</p></div>
+                    <span class="rounded-3 bg-info-subtle text-info p-3"><i class="bi bi-diagram-3-fill fs-5"></i></span>
+                </div>
+                <p class="small text-muted mb-0 mt-3">Distinct departments among active employees</p>
+            </article>
+        </div>
+    </div>
+</section>
+
+<section aria-labelledby="dashboard-analytics" class="mb-4">
+    <div class="d-flex align-items-end justify-content-between flex-wrap gap-2 mb-3">
+        <div>
+            <h2 id="dashboard-analytics" class="h4 fw-bold mb-1">Workforce Analytics</h2>
+            <p class="text-muted small mb-0">Trends are calculated from recorded employee data.</p>
+        </div>
+        <span class="badge bg-light text-secondary border">Last 12 months · through {{ today|date:"M j, Y" }}</span>
+    </div>
+    <div class="row g-3">
+        <div class="col-12 col-xl-7">
+            <section class="glass-card dashboard-chart">
+                <h3 class="h6 fw-bold mb-1">Monthly Attendance Trend</h3>
+                <p class="small text-muted mb-3">Recorded present, absent, and leave days.</p>
+                <div class="dashboard-chart-canvas">
+                    <canvas id="attendanceTrendChart" role="img" aria-label="Monthly attendance trend line chart"></canvas>
+                    <div class="dashboard-empty d-none" data-empty-for="attendanceTrendChart">No attendance records for this period.</div>
+                </div>
+            </section>
+        </div>
+        <div class="col-12 col-xl-5">
+            <section class="glass-card dashboard-chart">
+                <h3 class="h6 fw-bold mb-1">Today's Attendance</h3>
+                <p class="small text-muted mb-3">Present, absent, approved/on-record leave, and half-day.</p>
+                <div class="dashboard-chart-canvas">
+                    <canvas id="attendanceDayChart" role="img" aria-label="Today's attendance doughnut chart"></canvas>
+                    <div class="dashboard-empty d-none" data-empty-for="attendanceDayChart">No attendance records for today.</div>
+                </div>
+            </section>
+        </div>
+        <div class="col-12 col-xl-6">
+            <section class="glass-card dashboard-chart">
+                <h3 class="h6 fw-bold mb-1">Employees by Department</h3>
+                <p class="small text-muted mb-3">Active employees with a department assigned.</p>
+                <div class="dashboard-chart-canvas">
+                    <canvas id="departmentChart" role="img" aria-label="Active employee distribution by department"></canvas>
+                    <div class="dashboard-empty d-none" data-empty-for="departmentChart">No department data available yet.</div>
+                </div>
+            </section>
+        </div>
+        <div class="col-12 col-xl-6">
+            <section class="glass-card dashboard-chart">
+                <h3 class="h6 fw-bold mb-1">Monthly Employee Hiring Trend</h3>
+                <p class="small text-muted mb-3">Employees grouped by recorded joining date.</p>
+                <div class="dashboard-chart-canvas">
+                    <canvas id="hiringTrendChart" role="img" aria-label="Monthly employee hiring trend line chart"></canvas>
+                    <div class="dashboard-empty d-none" data-empty-for="hiringTrendChart">No employees have a joining date in this period.</div>
+                </div>
+            </section>
+        </div>
+    </div>
+</section>
+
+<section aria-label="Employee attendance percentage" class="glass-card mb-4">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+        <div>
+            <h2 class="h5 fw-bold mb-1">Employee Attendance Percentage</h2>
+            <p class="small text-muted mb-0">This month: present days plus half-weighted half-days, divided by recorded present, absent, and half-day records. Leave days are excluded.</p>
+        </div>
+        <div class="text-end">
+            <span class="h3 fw-bold text-primary">{% if attendance_percentage != None %}{{ attendance_percentage }}%{% else %}—{% endif %}</span>
+            <span class="small text-muted d-block">Team average</span>
+        </div>
+    </div>
+    {% if employee_attendance_summary %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead><tr><th>Employee</th><th>Recorded days</th><th>Attendance rate</th></tr></thead>
+                <tbody>
+                    {% for employee in employee_attendance_summary %}
+                        <tr>
+                            <td><a href="{% url 'employee_detail' employee.employee_id %}" class="fw-semibold text-decoration-none">{{ employee.name }}</a></td>
+                            <td>{{ employee.recorded_days }}</td>
+                            <td style="min-width: 180px;">
+                                <div class="d-flex justify-content-between small mb-1"><span>{{ employee.percentage }}%</span></div>
+                                <div class="progress" role="progressbar" aria-label="{{ employee.name }} attendance percentage" aria-valuenow="{{ employee.percentage|default:0 }}" aria-valuemin="0" aria-valuemax="100" style="height: 8px;">
+                                    <div class="progress-bar {% if employee.percentage < 75 %}bg-warning{% else %}bg-primary{% endif %}" style="width: {{ employee.percentage|default:0 }}%"></div>
+                                </div>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p class="text-muted small mb-0">Attendance percentages will appear when attendance records are available.</p>
+    {% endif %}
+    {% if department_attendance_summary %}
+        <div class="border-top mt-3 pt-3">
+            <h3 class="small fw-bold mb-3">Department attendance</h3>
+            <div class="row g-3">
+                {% for department in department_attendance_summary %}
+                    <div class="col-12 col-md-6 col-xl-4">
+                        <div class="d-flex justify-content-between small mb-1">
+                            <span class="fw-semibold">{{ department.name }}</span>
+                            <span>{{ department.percentage }}%</span>
+                        </div>
+                        <div class="progress" role="progressbar" aria-label="{{ department.name }} attendance percentage" aria-valuenow="{{ department.percentage|default:0 }}" aria-valuemin="0" aria-valuemax="100" style="height: 8px;">
+                            <div class="progress-bar bg-primary" style="width: {{ department.percentage|default:0 }}%"></div>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    {% endif %}
+</section>
+
+<div class="row g-3 mb-4">
+    <div class="col-12 col-xl-7">
+        <section class="glass-card dashboard-section-card">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                <div>
+                    <h2 class="h5 fw-bold mb-1">Pending Approvals</h2>
+                    <p class="text-muted small mb-0">{{ pending_leave_count }} leave request{{ pending_leave_count|pluralize }} awaiting review</p>
+                </div>
+                <a href="{% url 'leave_approvals' %}" class="btn btn-outline-premium btn-sm">All requests</a>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead><tr><th>Employee</th><th>Type</th><th>Dates</th><th></th></tr></thead>
+                    <tbody>
+                        {% for application in pending_applications %}
+                            <tr>
+                                <td class="fw-semibold">{{ application.employee.get_full_name|default:application.employee.username }}</td>
+                                <td>{{ application.leave_type }}</td>
+                                <td class="text-nowrap">{{ application.start_date|date:"M d" }} – {{ application.end_date|date:"M d, Y" }}</td>
+                                <td class="text-end"><a href="{% url 'leave_approvals' %}" class="btn btn-sm btn-outline-premium">Review</a></td>
+                            </tr>
+                        {% empty %}
+                            <tr><td colspan="4" class="text-center text-muted py-4">No pending leave approvals.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+    <div class="col-12 col-xl-5">
+        <section class="glass-card dashboard-section-card">
+            <h2 class="h5 fw-bold mb-1">Recent Notifications</h2>
+            <p class="text-muted small mb-3">Live alerts from pending requests. Alerts clear when requests are resolved.</p>
+            {% for notification in recent_notifications %}
+                <div class="d-flex gap-3 py-3 border-bottom">
+                    <span class="rounded-circle bg-warning-subtle text-warning d-flex align-items-center justify-content-center dashboard-timeline-icon"><i class="bi {{ notification.icon }}"></i></span>
+                    <div class="flex-grow-1 min-w-0">
+                        <div class="fw-semibold small">{{ notification.title }}</div>
+                        <div class="text-muted small">{{ notification.description }}</div>
+                        <small class="text-muted">{{ notification.created_at|timesince }} ago</small>
+                    </div>
+                    <a class="small text-decoration-none" href="{% url notification.url_name %}" aria-label="Review request">Review</a>
+                </div>
+            {% empty %}
+                <div class="dashboard-empty py-5">You're all caught up. No pending notifications.</div>
+            {% endfor %}
+        </section>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-12 col-xl-4">
+        <section class="glass-card dashboard-section-card">
+            <h2 class="h5 fw-bold mb-3">New Joiners</h2>
+            {% for employee in new_joiners %}
+                <a href="{% url 'employee_detail' employee.id %}" class="d-flex align-items-center gap-3 text-decoration-none text-reset py-2 border-bottom">
+                    <span class="bg-primary-subtle text-primary rounded-circle d-flex align-items-center justify-content-center dashboard-avatar"><i class="bi bi-person-plus"></i></span>
+                    <span class="flex-grow-1">
+                        <span class="fw-semibold d-block">{{ employee.get_full_name|default:employee.username }}</span>
+                        <small class="text-muted">{{ employee.department|default:"Department not set" }} · Joined {{ employee.joining_date|date:"M j" }}</small>
+                    </span>
+                    <i class="bi bi-arrow-right text-muted"></i>
+                </a>
+            {% empty %}
+                <div class="dashboard-empty py-5">No employees have joined this month.</div>
+            {% endfor %}
+        </section>
+    </div>
+    <div class="col-12 col-xl-4">
+        <section class="glass-card dashboard-section-card">
+            <h2 class="h5 fw-bold mb-3">Upcoming Birthdays</h2>
+            {% for item in upcoming_birthdays %}
+                <div class="d-flex align-items-center gap-3 py-2 border-bottom">
+                    <span class="bg-danger-subtle text-danger rounded-circle d-flex align-items-center justify-content-center dashboard-avatar"><i class="bi bi-cake2"></i></span>
+                    <div class="flex-grow-1">
+                        <div class="fw-semibold">{{ item.employee.get_full_name|default:item.employee.username }}</div>
+                        <small class="text-muted">{{ item.date|date:"M j" }}{% if item.days_until == 0 %} · Today{% elif item.days_until == 1 %} · Tomorrow{% else %} · In {{ item.days_until }} days{% endif %}</small>
+                    </div>
+                </div>
+            {% empty %}
+                <div class="dashboard-empty py-5">No birthdays in the next 30 days, or employee birth dates are not recorded.</div>
+            {% endfor %}
+        </section>
+    </div>
+    <div class="col-12 col-xl-4">
+        <section class="glass-card dashboard-section-card">
+            <h2 class="h5 fw-bold mb-3">Upcoming Work Anniversaries</h2>
+            {% for item in upcoming_anniversaries %}
+                <div class="d-flex align-items-center gap-3 py-2 border-bottom">
+                    <span class="bg-info-subtle text-info rounded-circle d-flex align-items-center justify-content-center dashboard-avatar"><i class="bi bi-award"></i></span>
+                    <div class="flex-grow-1">
+                        <div class="fw-semibold">{{ item.employee.get_full_name|default:item.employee.username }}</div>
+                        <small class="text-muted">{{ item.date|date:"M j" }} · {{ item.years }} year{{ item.years|pluralize }}{% if item.days_until == 0 %} · Today{% elif item.days_until == 1 %} · Tomorrow{% else %} · In {{ item.days_until }} days{% endif %}</small>
+                    </div>
+                </div>
+            {% empty %}
+                <div class="dashboard-empty py-5">No work anniversaries in the next 30 days, or joining dates are not recorded.</div>
+            {% endfor %}
+        </section>
+    </div>
+</div>
+
+<section class="glass-card mb-4">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+        <div>
+            <h2 class="h5 fw-bold mb-1">Recent Employee Activities</h2>
+            <p class="text-muted small mb-0">Recent attendance records, work logs, leave requests, and account creation.</p>
+        </div>
+        <a href="{% url 'employee_list' %}" class="btn btn-outline-premium btn-sm">Employee directory</a>
+    </div>
+    <div class="row">
+        {% for activity in recent_activities %}
+            <div class="col-12 col-md-6">
+                <a href="{% url 'employee_detail' activity.employee_id %}" class="d-flex align-items-center gap-3 py-3 border-bottom text-decoration-none text-reset">
+                    <span class="rounded-circle bg-primary-subtle text-primary d-flex align-items-center justify-content-center dashboard-timeline-icon"><i class="bi {{ activity.icon }}"></i></span>
+                    <span class="flex-grow-1">
+                        <span class="fw-semibold d-block">{{ activity.title }}</span>
+                        <small class="text-muted">{{ activity.description }}</small>
+                    </span>
+                    <small class="text-muted text-nowrap">{{ activity.occurred_at|timesince }} ago</small>
+                </a>
+            </div>
+        {% empty %}
+            <div class="col-12"><div class="dashboard-empty py-5">Employee activity will appear here when records are available.</div></div>
+        {% endfor %}
+    </div>
+</section>
+
+{{ attendance_trend_chart|json_script:"attendance-trend-data" }}
+{{ attendance_day_chart|json_script:"attendance-day-data" }}
+{{ department_distribution|json_script:"department-distribution-data" }}
+{{ hiring_trend_chart|json_script:"hiring-trend-data" }}
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script>
+    (() => {
+        const chartData = {
+            attendanceTrend: JSON.parse(document.getElementById('attendance-trend-data').textContent),
+            attendanceDay: JSON.parse(document.getElementById('attendance-day-data').textContent),
+            departments: JSON.parse(document.getElementById('department-distribution-data').textContent),
+            hiringTrend: JSON.parse(document.getElementById('hiring-trend-data').textContent)
+        };
+        const chartDefinitions = [
+            {
+                id: 'attendanceTrendChart',
+                hasData: chartData.attendanceTrend.present.some((value, index) =>
+                    value + chartData.attendanceTrend.absent[index] + chartData.attendanceTrend.leave[index] > 0
+                ),
+                config: {
+                    type: 'line',
+                    data: {
+                        labels: chartData.attendanceTrend.labels,
+                        datasets: [
+                            { label: 'Present', data: chartData.attendanceTrend.present, borderColor: '#16a34a', backgroundColor: '#16a34a', tension: 0.3 },
+                            { label: 'Absent', data: chartData.attendanceTrend.absent, borderColor: '#e11d48', backgroundColor: '#e11d48', tension: 0.3 },
+                            { label: 'Leave', data: chartData.attendanceTrend.leave, borderColor: '#f59e0b', backgroundColor: '#f59e0b', tension: 0.3 }
+                        ]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { position: 'bottom' } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
+                }
+            },
+            {
+                id: 'attendanceDayChart',
+                hasData: chartData.attendanceDay.values.some((value) => value > 0),
+                config: {
+                    type: 'doughnut',
+                    data: {
+                        labels: chartData.attendanceDay.labels,
+                        datasets: [{ data: chartData.attendanceDay.values, backgroundColor: ['#16a34a', '#e11d48', '#f59e0b', '#6366f1'], borderWidth: 0 }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false, cutout: '66%', plugins: { legend: { position: 'bottom' } } }
+                }
+            },
+            {
+                id: 'departmentChart',
+                hasData: chartData.departments.length > 0,
+                config: {
+                    type: 'bar',
+                    data: {
+                        labels: chartData.departments.map((item) => item.department),
+                        datasets: [{ label: 'Active employees', data: chartData.departments.map((item) => item.employee_count), backgroundColor: '#6366f1', borderRadius: 6 }]
+                    },
+                    options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { precision: 0 } } } }
+                }
+            },
+            {
+                id: 'hiringTrendChart',
+                hasData: chartData.hiringTrend.values.some((value) => value > 0),
+                config: {
+                    type: 'line',
+                    data: {
+                        labels: chartData.hiringTrend.labels,
+                        datasets: [{ label: 'New joiners', data: chartData.hiringTrend.values, borderColor: '#6366f1', backgroundColor: 'rgba(99, 102, 241, .14)', fill: true, tension: 0.3 }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
+                }
+            }
+        ];
+
+        if (!window.Chart) {
+            chartDefinitions.forEach(({ id }) => {
+                const emptyState = document.querySelector(`[data-empty-for="${id}"]`);
+                emptyState.textContent = 'Charts could not load. Please refresh to try again.';
+                emptyState.classList.remove('d-none');
+                document.getElementById(id).classList.add('d-none');
+            });
+            return;
+        }
+
+        chartDefinitions.forEach(({ id, hasData, config }) => {
+            const canvas = document.getElementById(id);
+            const emptyState = document.querySelector(`[data-empty-for="${id}"]`);
+            if (!hasData) {
+                canvas.classList.add('d-none');
+                emptyState.classList.remove('d-none');
+                return;
+            }
+            new Chart(canvas, config);
+        });
+    })();
+</script>
+{% endblock %}

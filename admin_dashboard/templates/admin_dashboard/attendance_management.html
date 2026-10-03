@@ -1,0 +1,127 @@
+{% extends 'admin_dashboard/base.html' %}
+{% block title %}Attendance Register | HRMS{% endblock %}
+{% block active_attendance_management %}active{% endblock %}
+{% block active_manager_team_attendance %}active{% endblock %}
+{% block header_content %}
+<h1>{% if is_manager_view %}Team Attendance{% else %}Attendance Register{% endif %}</h1>
+<p class="text-muted mb-0">Review daily attendance, monthly summaries, and pending regularization requests.</p>
+{% endblock %}
+{% block content %}
+<div class="row g-4 mb-4">
+    <div class="col-12">
+        <section class="glass-card">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
+                <div>
+                    <h2 class="h5 fw-bold mb-1">Daily Register</h2>
+                    <p class="small text-secondary mb-0">
+                        {{ selected_date|date:"l, F j, Y" }}{% if holiday %} · {{ holiday.name }}{% endif %}
+                    </p>
+                </div>
+                <form method="get" class="d-flex flex-wrap gap-2">
+                    <label class="visually-hidden" for="attendance-date">Register date</label>
+                    <input id="attendance-date" class="form-control form-control-sm" type="date" name="date" value="{{ selected_date|date:'Y-m-d' }}">
+                    <input type="hidden" name="month" value="{{ selected_month }}">
+                    <input type="hidden" name="year" value="{{ selected_year }}">
+                    <button class="btn btn-outline-premium btn-sm" type="submit">View date</button>
+                </form>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead class="table-light text-uppercase small"><tr><th>Employee</th><th>Department</th><th>Status</th><th>Check in</th><th>Check out</th><th>Missing punch</th></tr></thead>
+                    <tbody>
+                        {% for row in daily_rows %}
+                        <tr>
+                            <td class="fw-semibold">{{ row.employee.get_full_name|default:row.employee.username }}<small class="text-secondary d-block">{{ row.employee.employee_id|default:"" }}</small></td>
+                            <td>{{ row.employee.department|default:"—" }}</td>
+                            <td>{{ row.status }}</td>
+                            <td>{{ row.attendance.check_in|time:"h:i A"|default:"—" }}</td>
+                            <td>{{ row.attendance.check_out|time:"h:i A"|default:"—" }}</td>
+                            <td>
+                                {% if row.missing_check_in %}<span class="badge bg-danger-subtle text-danger me-1">Missing check-in</span>{% endif %}
+                                {% if row.missing_check_out %}<span class="badge bg-warning-subtle text-warning">Missing check-out</span>{% endif %}
+                                {% if not row.missing_check_in and not row.missing_check_out %}<span class="text-secondary">—</span>{% endif %}
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="6" class="text-center text-secondary py-4">No active employees are assigned to this view.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <div class="col-12">
+        <section class="glass-card">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
+                <div>
+                    <h2 class="h5 fw-bold mb-1">Monthly Attendance Report</h2>
+                    <p class="small text-secondary mb-0">{{ selected_year }} · {{ selected_month|stringformat:"02d" }}</p>
+                </div>
+                <div class="d-flex gap-2">
+                    <form method="get" class="d-flex gap-2">
+                        <input type="hidden" name="date" value="{{ selected_date|date:'Y-m-d' }}">
+                        <label class="visually-hidden" for="report-month">Month</label>
+                        <select id="report-month" name="month" class="form-select form-select-sm">
+                            {% for month in months %}<option value="{{ month.0 }}" {% if month.0 == selected_month %}selected{% endif %}>{{ month.1 }}</option>{% endfor %}
+                        </select>
+                        <label class="visually-hidden" for="report-year">Year</label>
+                        <select id="report-year" name="year" class="form-select form-select-sm">
+                            {% for year in years %}<option value="{{ year }}" {% if year == selected_year %}selected{% endif %}>{{ year }}</option>{% endfor %}
+                        </select>
+                        <button class="btn btn-outline-premium btn-sm" type="submit">Filter</button>
+                    </form>
+                    <a class="btn btn-premium btn-sm" href="{% url 'attendance_report_export' %}?month={{ selected_month }}&amp;year={{ selected_year }}"><i class="bi bi-download me-1"></i> CSV</a>
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead class="table-light text-uppercase small"><tr><th>Employee</th><th>Present</th><th>Half day</th><th>Absent</th><th>Leave</th><th>Late</th><th>Incomplete check-out</th></tr></thead>
+                    <tbody>
+                        {% for row in monthly_rows %}
+                        <tr>
+                            <td class="fw-semibold">{{ row.employee.get_full_name|default:row.employee.username }}</td>
+                            <td>{{ row.present|default:0 }}</td><td>{{ row.half_day|default:0 }}</td><td>{{ row.absent|default:0 }}</td><td>{{ row.leave|default:0 }}</td><td>{{ row.late|default:0 }}</td><td>{{ row.missing_check_out|default:0 }}</td>
+                        </tr>
+                        {% empty %}<tr><td colspan="7" class="text-center text-secondary py-4">No monthly attendance data available.</td></tr>{% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <div class="col-12">
+        <section class="glass-card">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h2 class="h5 fw-bold mb-0">Regularization approvals</h2>
+                <span class="badge rounded-pill bg-warning-subtle text-warning">{{ pending_correction_count }} pending</span>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead class="table-light text-uppercase small"><tr><th>Employee / date</th><th>Requested times</th><th>Reason</th><th>Decision</th></tr></thead>
+                    <tbody>
+                        {% for correction in pending_corrections %}
+                        <tr>
+                            <td class="text-nowrap fw-semibold">{{ correction.employee.get_full_name|default:correction.employee.username }}<small class="text-secondary d-block">{{ correction.date|date:"M d, Y" }}</small></td>
+                            <td class="text-nowrap">In: {{ correction.requested_check_in|time:"h:i A"|default:"—" }}<br>Out: {{ correction.requested_check_out|time:"h:i A"|default:"—" }}</td>
+                            <td style="min-width:180px">{{ correction.reason }}</td>
+                            <td style="min-width:230px">
+                                <form method="post" class="d-grid gap-2">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="correction_id" value="{{ correction.pk }}">
+                                    <textarea name="approval_notes" rows="2" maxlength="2000" class="form-control form-control-sm" placeholder="Feedback (required to reject)"></textarea>
+                                    <div class="d-flex gap-2">
+                                        <button class="btn btn-success btn-sm" type="submit" name="action" value="approve">Approve</button>
+                                        <button class="btn btn-outline-danger btn-sm" type="submit" name="action" value="reject">Reject</button>
+                                    </div>
+                                </form>
+                            </td>
+                        </tr>
+                        {% empty %}<tr><td colspan="4" class="text-center text-secondary py-4">No pending attendance regularization requests.</td></tr>{% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+</div>
+{% endblock %}

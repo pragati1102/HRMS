@@ -1,0 +1,49 @@
+{% extends 'admin_dashboard/base.html' %}
+{% block title %}Salary Structure | Antigravity HRMS{% endblock %}
+{% block active_payroll %}active{% endblock %}
+{% block header_content %}
+<h1>{% if structure %}Revise{% else %}Create{% endif %} Salary Structure</h1>
+<p class="text-muted mb-0">Compensation details are restricted to authorized HR administrators.</p>
+{% endblock %}
+{% block content %}
+<div class="row g-4">
+    <div class="col-12 col-xl-7">
+        <section class="glass-card">
+            <form method="post" class="row g-3">
+                {% csrf_token %}
+                {% if form.non_field_errors %}<div class="col-12"><div class="alert alert-danger">{{ form.non_field_errors }}</div></div>{% endif %}
+                {% for field in form %}
+                <div class="{% if field.name == 'reason' %}col-12{% elif field.name == 'attendance_based' or field.name == 'is_active' %}col-12 col-md-6{% else %}col-12 col-md-6{% endif %}">
+                    {% if field.field.widget.input_type == 'checkbox' %}
+                    <div class="form-check mt-4">{{ field }}<label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label></div>
+                    {% else %}
+                    <label class="form-label fw-semibold" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}
+                    {% endif %}
+                    {% for error in field.errors %}<small class="text-danger d-block">{{ error }}</small>{% endfor %}
+                </div>
+                {% endfor %}
+                <div class="col-12 d-flex gap-2"><button class="btn btn-premium" type="submit">Save and record revision</button><a class="btn btn-outline-premium" href="{% url 'payroll_management' %}">Cancel</a></div>
+            </form>
+        </section>
+    </div>
+    <div class="col-12 col-xl-5">
+        <section class="glass-card">
+            <h2 class="h5 fw-bold mb-3">Revision history</h2>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle">
+                    <thead><tr><th>Effective</th><th>Gross</th><th>Reason / editor</th></tr></thead>
+                    <tbody>
+                        {% for revision in revisions %}
+                        <tr>
+                            <td>{{ revision.effective_from }}</td>
+                            <td>{{ revision.gross_salary|floatformat:2 }}</td>
+                            <td>{{ revision.reason|default:"—" }}<small class="text-secondary d-block">{% if revision.revised_by %}{{ revision.revised_by.get_full_name|default:revision.revised_by.username }}{% endif %}</small></td>
+                        </tr>
+                        {% empty %}<tr><td colspan="3" class="text-center text-secondary">No revisions recorded.</td></tr>{% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+</div>
+{% endblock %}

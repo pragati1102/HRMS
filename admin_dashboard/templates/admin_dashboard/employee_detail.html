@@ -4,15 +4,35 @@
 {% block active_employees %}active{% endblock %}
 
 {% block header_content %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-3">
 <div class="d-flex align-items-center gap-3">
     <a href="{% url 'employee_list' %}" class="btn btn-outline-premium py-2 px-3">
         <i class="bi bi-arrow-left"></i>
     </a>
     <div>
-        <h1>Employee Profile Detail</h1>
-        <p class="text-muted mb-0">View profile information, attendance analytics, task logs, and salary status.</p>
+        <h1>{{ employee.get_full_name|default:employee.username }}</h1>
+        <p class="text-muted mb-0">{{ employee.employee_id }} · Employee profile and HR history</p>
     </div>
 </div>
+<div class="d-flex flex-wrap gap-2">
+    <a href="{% url 'employee_edit' employee.pk %}" class="btn btn-premium"><i class="bi bi-pencil me-2"></i>Edit Profile</a>
+    {% if employee.is_active %}
+        <form method="POST" action="{% url 'employee_deactivate' employee.pk %}" onsubmit="return confirm('Deactivate this account? The employee will no longer be able to sign in.');">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-outline-danger"><i class="bi bi-person-dash me-2"></i>Deactivate</button>
+        </form>
+    {% else %}
+        <span class="badge bg-danger-subtle text-danger align-self-center">Account deactivated</span>
+        {% if employee.employment_status == 'active' or employee.employment_status == 'on_leave' %}
+            <form method="POST" action="{% url 'employee_activate' employee.pk %}">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-outline-success"><i class="bi bi-person-check me-2"></i>Reactivate</button>
+            </form>
+        {% endif %}
+    {% endif %}
+</div>
+</div>
+
 {% endblock %}
 
 {% block content %}
@@ -23,18 +43,35 @@
         <div class="glass-card h-100">
             <div class="d-flex align-items-center gap-3 mb-4">
                 <div class="rounded-circle bg-light border d-flex align-items-center justify-content-center overflow-hidden" style="width: 56px; height: 56px; flex: 0 0 56px;">
-                    {% with avatar_user=employee avatar_emoji_size='1.8rem' %}{% include 'core/partials/avatar.html' %}{% endwith %}
+                    {% with avatar_user=employee %}{% include 'core/partials/avatar.html' %}{% endwith %}
                 </div>
-                <h5 class="fw-bold mb-0"><i class="bi bi-person-lines-fill text-indigo me-2"></i> Profile Information</h5>
+                <h5 class="fw-bold mb-0"><i class="bi bi-person-lines-fill text-indigo me-2"></i> Personal & Professional Profile</h5>
             </div>
             <div class="row g-3">
+                <div class="col-sm-6">
+                    <span class="text-secondary small d-block">Employee ID</span>
+                    <strong class="text-dark">{{ employee.employee_id }}</strong>
+                </div>
+                <div class="col-sm-6">
+                    <span class="text-secondary small d-block">Employment Status</span>
+                    <span class="badge rounded-pill {% if employee.employment_status == 'active' %}bg-success-subtle text-success{% elif employee.employment_status == 'on_leave' %}bg-warning-subtle text-warning{% else %}bg-secondary-subtle text-secondary{% endif %}">{{ employee.get_employment_status_display }}</span>
+                    {% if not employee.is_active %}<span class="badge rounded-pill bg-danger-subtle text-danger">Account deactivated</span>{% endif %}
+                </div>
                 <div class="col-sm-6">
                     <span class="text-secondary small d-block">Full Name</span>
                     <strong class="text-dark fs-5">{{ employee.get_full_name|default:employee.username }}</strong>
                 </div>
                 <div class="col-sm-6">
-                    <span class="text-secondary small d-block">Email Address</span>
+                    <span class="text-secondary small d-block">Work Email</span>
                     <span class="text-dark">{{ employee.email|default:"N/A" }}</span>
+                </div>
+                <div class="col-sm-6">
+                    <span class="text-secondary small d-block">Personal Email</span>
+                    <span class="text-dark">{{ employee.personal_email|default:"N/A" }}</span>
+                </div>
+                <div class="col-sm-6">
+                    <span class="text-secondary small d-block">Phone</span>
+                    <span class="text-dark">{{ employee.phone_number|default:"N/A" }}</span>
                 </div>
                 <div class="col-sm-6">
                     <span class="text-secondary small d-block">Department</span>
@@ -49,8 +86,32 @@
                     <span class="text-dark">{{ employee.joining_date|date:"F d, Y"|default:"N/A" }}</span>
                 </div>
                 <div class="col-sm-6">
+                    <span class="text-secondary small d-block">Employment Type</span>
+                    <span class="text-dark">{{ employee.get_employment_type_display|default:"N/A" }}</span>
+                </div>
+                <div class="col-sm-6">
+                    <span class="text-secondary small d-block">Reporting Manager</span>
+                    <span class="text-dark">{% if employee.manager %}{{ employee.manager.get_full_name|default:employee.manager.username }}{% else %}Not assigned{% endif %}</span>
+                </div>
+                <div class="col-sm-6">
+                    <span class="text-secondary small d-block">Work Location</span>
+                    <span class="text-dark">{{ employee.work_location|default:"N/A" }}</span>
+                </div>
+                <div class="col-sm-6">
+                    <span class="text-secondary small d-block">Date of Birth</span>
+                    <span class="text-dark">{{ employee.date_of_birth|date:"F d, Y"|default:"N/A" }}</span>
+                </div>
+                <div class="col-sm-6">
+                    <span class="text-secondary small d-block">Emergency Contact</span>
+                    <span class="text-dark">{{ employee.emergency_contact|default:"N/A" }}</span>
+                </div>
+                <div class="col-12">
+                    <span class="text-secondary small d-block">Address</span>
+                    <span class="text-dark">{{ employee.address|default:"N/A"|linebreaksbr }}</span>
+                </div>
+                <div class="col-sm-6">
                     <span class="text-secondary small d-block">Base Salary</span>
-                    <strong class="text-indigo">${{ employee.salary_amount|floatformat:2 }} / month</strong>
+                    <strong class="text-indigo">{{ employee.salary_amount|floatformat:2 }} / month</strong>
                 </div>
             </div>
         </div>
@@ -298,6 +359,72 @@
                 </table>
             </div>
         </div>
+    </div>
+</div>
+<div class="row g-4 mt-1">
+    <div class="col-12 col-xl-6">
+        <section class="glass-card h-100">
+            <div class="mb-3">
+                <h2 class="h5 fw-bold mb-1"><i class="bi bi-folder2-open text-indigo me-2"></i>Employee Documents</h2>
+                <p class="text-muted small mb-0">Private employee files. PDF, Word, and image files up to 10 MB.</p>
+            </div>
+            <form method="POST" enctype="multipart/form-data" action="{% url 'employee_document_upload' employee.pk %}" class="row g-2 align-items-end mb-4">
+                {% csrf_token %}
+                {% for field in document_form %}
+                    <div class="{% if field.name == 'file' %}col-12{% else %}col-12 col-md-6{% endif %}">
+                        <label class="form-label small fw-semibold" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                        {{ field }}
+                        {% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                    </div>
+                {% endfor %}
+                <div class="col-12"><button type="submit" class="btn btn-premium btn-sm"><i class="bi bi-upload me-2"></i>Upload Document</button></div>
+            </form>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead><tr><th>Document</th><th>Category</th><th>Uploaded</th><th class="text-end">Actions</th></tr></thead>
+                    <tbody>
+                        {% for document in documents %}
+                            <tr>
+                                <td class="fw-semibold">{{ document.title }}</td>
+                                <td>{{ document.get_category_display }}</td>
+                                <td class="text-nowrap">{{ document.uploaded_at|date:"M d, Y" }}</td>
+                                <td class="text-end text-nowrap">
+                                    <a class="btn btn-sm btn-outline-premium" href="{% url 'employee_document_download' employee.pk document.pk %}" aria-label="Download {{ document.title }}"><i class="bi bi-download"></i></a>
+                                    <form method="POST" action="{% url 'employee_document_delete' employee.pk document.pk %}" class="d-inline" onsubmit="return confirm('Delete this employee document?');">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-sm btn-outline-danger" aria-label="Delete {{ document.title }}"><i class="bi bi-trash"></i></button>
+                                    </form>
+                                </td>
+                            </tr>
+                        {% empty %}
+                            <tr><td colspan="4" class="text-center text-muted py-4">No employee documents have been uploaded.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+    <div class="col-12 col-xl-6">
+        <section class="glass-card h-100">
+            <h2 class="h5 fw-bold mb-1"><i class="bi bi-clock-history text-indigo me-2"></i>Profile Activity</h2>
+            <p class="text-muted small mb-3">A timeline of recorded HR activity and employee documents.</p>
+            <div class="employee-timeline">
+                {% for activity in activity_timeline %}
+                    <div class="d-flex gap-3 pb-3">
+                        <span class="rounded-circle bg-primary-subtle text-primary d-flex align-items-center justify-content-center" style="width: 38px; height: 38px; flex: 0 0 38px;"><i class="bi {{ activity.icon }}"></i></span>
+                        <div class="flex-grow-1 border-bottom pb-3">
+                            <div class="d-flex justify-content-between flex-wrap gap-1">
+                                <strong class="small">{{ activity.title }}</strong>
+                                <time class="small text-muted">{{ activity.occurred_at|date:"M d, Y · H:i" }}</time>
+                            </div>
+                            <p class="small text-muted mb-0 mt-1">{{ activity.description }}</p>
+                        </div>
+                    </div>
+                {% empty %}
+                    <p class="text-muted small py-4">No profile activity has been recorded.</p>
+                {% endfor %}
+            </div>
+        </section>
     </div>
 </div>
 {% endblock %}

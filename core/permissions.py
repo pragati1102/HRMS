@@ -1,6 +1,8 @@
 from rest_framework.permissions import BasePermission
 from django.contrib.auth.mixins import UserPassesTestMixin
 from django.core.exceptions import PermissionDenied
+from django.shortcuts import render
+from django.shortcuts import redirect
 
 class IsAdminRole(BasePermission):
     """
@@ -24,10 +26,11 @@ class AdminRoleRequiredMixin(UserPassesTestMixin):
 
     def handle_no_permission(self):
         if self.request.user.is_authenticated:
-            # Return 403 Forbidden
-            raise PermissionDenied("You do not have permission to access this dashboard.")
+            if getattr(self.request.user, 'role', None) == 'employee':
+                return redirect('employee_dashboard')
+            return render(self.request, 'admin_dashboard/access_denied.html', status=403)
         # Otherwise redirect to login page
-        return super().handle_no_permission()
+        return redirect('admin_login')
 
 
 class EmployeeRoleRequiredMixin(UserPassesTestMixin):
@@ -44,5 +47,7 @@ class EmployeeRoleRequiredMixin(UserPassesTestMixin):
 
     def handle_no_permission(self):
         if self.request.user.is_authenticated:
+            if getattr(self.request.user, 'role', None) == 'admin':
+                return redirect('admin_dashboard')
             raise PermissionDenied("Only employees can access this portal.")
-        return super().handle_no_permission()
+        return redirect('employee_login')

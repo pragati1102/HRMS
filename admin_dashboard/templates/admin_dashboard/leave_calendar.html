@@ -1,0 +1,60 @@
+{% extends 'admin_dashboard/base.html' %}
+{% block title %}Leave Calendar | HRMS{% endblock %}
+{% block active_leave_calendar %}active{% endblock %}
+{% block header_content %}
+<h1>Leave &amp; Holiday Calendar</h1>
+<p class="text-muted mb-0">View approved team leave and company holidays by date.</p>
+{% endblock %}
+{% block content %}
+<section class="glass-card">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
+        <div class="d-flex align-items-center gap-2">
+            <a class="btn btn-outline-premium btn-sm" href="?month={{ prev_month }}&amp;year={{ prev_year }}" aria-label="Previous month"><i class="bi bi-chevron-left"></i></a>
+            <h2 class="h5 fw-bold mb-0">{{ month_name }} {{ selected_year }}</h2>
+            <a class="btn btn-outline-premium btn-sm" href="?month={{ next_month }}&amp;year={{ next_year }}" aria-label="Next month"><i class="bi bi-chevron-right"></i></a>
+        </div>
+        <form method="get" class="d-flex gap-2">
+            <label class="visually-hidden" for="leave-calendar-month">Month</label>
+            <select id="leave-calendar-month" name="month" class="form-select form-select-sm">
+                {% for month in months %}<option value="{{ month.0 }}" {% if month.0 == selected_month %}selected{% endif %}>{{ month.1 }}</option>{% endfor %}
+            </select>
+            <label class="visually-hidden" for="leave-calendar-year">Year</label>
+            <select id="leave-calendar-year" name="year" class="form-select form-select-sm">
+                {% for year in years %}<option value="{{ year }}" {% if year == selected_year %}selected{% endif %}>{{ year }}</option>{% endfor %}
+            </select>
+            <button class="btn btn-outline-premium btn-sm" type="submit">Go</button>
+        </form>
+    </div>
+    <div class="table-responsive">
+        <table class="table leave-calendar-table">
+            <thead><tr>{% for day_name in weekday_labels %}<th>{{ day_name }}</th>{% endfor %}</tr></thead>
+            <tbody>
+                {% for week in weeks %}
+                <tr>
+                    {% for day in week %}
+                    <td class="{% if not day.is_current_month %}text-secondary bg-light{% endif %}{% if day.is_today %} border border-primary border-2{% endif %}">
+                        <div class="fw-semibold">{{ day.date.day }}</div>
+                        {% for event in day.events %}
+                        <div class="calendar-event {% if event.kind == 'holiday' %}calendar-holiday{% else %}calendar-leave{% endif %}" title="{{ event.title }}">{{ event.title }}</div>
+                        {% endfor %}
+                    </td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="d-flex gap-3 small mt-3">
+        <span><span class="calendar-key calendar-leave"></span> Approved leave</span>
+        <span><span class="calendar-key calendar-holiday"></span> Company holiday</span>
+    </div>
+</section>
+<style>
+    .leave-calendar-table { table-layout: fixed; min-width: 720px; }
+    .leave-calendar-table td { height: 120px; vertical-align: top; }
+    .calendar-event { border-radius: .35rem; font-size: .72rem; margin-top: .3rem; overflow: hidden; padding: .2rem .35rem; text-overflow: ellipsis; }
+    .calendar-leave { background: #eef2ff; color: #4338ca; }
+    .calendar-holiday { background: #fff7ed; color: #c2410c; }
+    .calendar-key { display: inline-block; width: .75rem; height: .75rem; border-radius: .2rem; margin-right: .25rem; vertical-align: -1px; }
+</style>
+{% endblock %}

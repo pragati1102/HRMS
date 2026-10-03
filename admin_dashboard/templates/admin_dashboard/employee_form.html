@@ -1,0 +1,82 @@
+{% extends 'admin_dashboard/base.html' %}
+
+{% block title %}{% if object %}Edit employee{% else %}Add employee{% endif %} | Antigravity HRMS{% endblock %}
+{% block active_employees %}active{% endblock %}
+
+{% block header_content %}
+<div class="d-flex align-items-center gap-3">
+    <a href="{% if object %}{% url 'employee_detail' object.pk %}{% else %}{% url 'employee_list' %}{% endif %}" class="btn btn-outline-premium" aria-label="Go back"><i class="bi bi-arrow-left"></i></a>
+    <div>
+        <h1>{% if object %}Edit Employee{% else %}Add Employee{% endif %}</h1>
+        <p class="text-muted mb-0">{% if object %}Update {{ object.get_full_name|default:object.username }}'s profile and employment details.{% else %}Create a new employee profile and sign-in account.{% endif %}</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<form method="POST" enctype="multipart/form-data" class="row g-4">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+        <div class="col-12"><div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div></div>
+    {% endif %}
+    <div class="col-12 col-xl-8">
+        <section class="glass-card mb-4">
+            <h2 class="h5 fw-bold mb-1">Personal Information</h2>
+            <p class="text-muted small mb-4">Basic identity and contact information.</p>
+            <div class="row g-3">
+                {% for field in form %}
+                    {% if field.name in 'first_name last_name username email personal_email phone_number gender date_of_birth address emergency_contact profile_photo' %}
+                        <div class="{% if field.name == 'address' or field.name == 'profile_photo' %}col-12{% else %}col-12 col-md-6{% endif %}">
+                            <label class="form-label fw-semibold" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %}<span class="text-danger"> *</span>{% endif %}</label>
+                            {{ field }}
+                            {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+                            {% for error in field.errors %}<div class="text-danger small mt-1">{{ error }}</div>{% endfor %}
+                        </div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+        </section>
+        <section class="glass-card mb-4">
+            <h2 class="h5 fw-bold mb-1">Employment Information</h2>
+            <p class="text-muted small mb-4">Role, reporting structure, employment status, and compensation.</p>
+            <div class="row g-3">
+                {% for field in form %}
+                    {% if field.name in 'department_record designation_record manager joining_date employment_type employment_status work_location leave_entitlement_days casual_leave_quota sick_leave_quota paid_leave_quota' %}
+                        <div class="col-12 col-md-6">
+                            <label class="form-label fw-semibold" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %}<span class="text-danger"> *</span>{% endif %}</label>
+                            {{ field }}
+                            {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+                            {% for error in field.errors %}<div class="text-danger small mt-1">{{ error }}</div>{% endfor %}
+                        </div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+        </section>
+    </div>
+    <aside class="col-12 col-xl-4">
+        <section class="glass-card mb-4">
+            <h2 class="h5 fw-bold mb-1">Account Access</h2>
+            <p class="text-muted small mb-3">The employee uses their username and password to sign in.</p>
+            {% if object %}
+                <div class="alert {% if object.is_active %}alert-success{% else %}alert-warning{% endif %} small" role="status">
+                    {% if object.is_active %}This account is active and can sign in.{% else %}This account is deactivated and cannot sign in. Use Reactivate from the profile or directory when the employment status is Active or On Leave.{% endif %}
+                </div>
+                <div class="mb-3"><span class="text-muted small d-block">Generated Employee ID</span><strong>{{ object.employee_id }}</strong></div>
+            {% else %}
+                <div class="alert alert-info small" role="status">A unique employee ID is generated automatically after the profile is saved.</div>
+            {% endif %}
+            <div class="mb-3">
+                <label class="form-label fw-semibold" for="{{ form.password.id_for_label }}">{{ form.password.label }}{% if not object %}<span class="text-danger"> *</span>{% endif %}</label>
+                {{ form.password }}
+                {% if form.password.help_text %}<div class="form-text">{{ form.password.help_text }}</div>{% endif %}
+                {% for error in form.password.errors %}<div class="text-danger small mt-1">{{ error }}</div>{% endfor %}
+            </div>
+            {% if object %}<p class="small text-muted mb-0">Leave the password blank to keep the current password.</p>{% endif %}
+        </section>
+        <div class="d-flex flex-wrap gap-2">
+            <button type="submit" class="btn btn-premium"><i class="bi bi-check2-circle me-2"></i>{% if object %}Save Changes{% else %}Create Employee{% endif %}</button>
+            <a href="{% if object %}{% url 'employee_detail' object.pk %}{% else %}{% url 'employee_list' %}{% endif %}" class="btn btn-outline-premium">Cancel</a>
+        </div>
+    </aside>
+</form>
+{% endblock %}

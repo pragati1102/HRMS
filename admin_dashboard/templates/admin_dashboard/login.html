@@ -99,7 +99,11 @@
         </div>
         
         <h4 class="text-center fw-bold text-dark mb-1">Welcome Back</h4>
-        <p class="text-center text-muted small mb-4">HRMS Admin Portal</p>
+        <p class="text-center text-muted small mb-4">{{ portal_title }}</p>
+
+        {% for message in messages %}
+            <div class="alert alert-warning rounded-3 py-2 px-3 small mb-3" role="alert">{{ message }}</div>
+        {% endfor %}
         
         {% if form.errors %}
             <div class="alert alert-danger rounded-3 py-2 px-3 small mb-3" role="alert">

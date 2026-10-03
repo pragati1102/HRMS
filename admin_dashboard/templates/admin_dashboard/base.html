@@ -284,16 +284,52 @@
         </div>
         <ul class="sidebar-menu">
             {% if request.user.role == 'admin' %}
+            <li class="{% block active_admin_dashboard %}{% endblock %}">
+                <a href="{% url 'admin_dashboard' %}">
+                    <i class="bi bi-speedometer2"></i>
+                    <span>Dashboard</span>
+                </a>
+            </li>
             <li class="{% block active_employees %}{% endblock %}">
                 <a href="{% url 'employee_list' %}">
                     <i class="bi bi-people-fill"></i>
                     <span>Employees</span>
                 </a>
             </li>
+            <li class="{% block active_organization %}{% endblock %}">
+                <a href="{% url 'organization_management' %}">
+                    <i class="bi bi-diagram-3-fill"></i>
+                    <span>Organization</span>
+                </a>
+            </li>
+            <li class="{% block active_payroll %}{% endblock %}">
+                <a href="{% url 'payroll_management' %}">
+                    <i class="bi bi-cash-stack"></i>
+                    <span>Payroll</span>
+                </a>
+            </li>
             <li class="{% block active_leaves %}{% endblock %}">
                 <a href="{% url 'leave_approvals' %}">
                     <i class="bi bi-calendar-check-fill"></i>
                     <span>Leave Approvals</span>
+                </a>
+            </li>
+            <li class="{% block active_leave_policies %}{% endblock %}">
+                <a href="{% url 'leave_policies' %}">
+                    <i class="bi bi-sliders"></i>
+                    <span>Leave Policies</span>
+                </a>
+            </li>
+            <li class="{% block active_leave_calendar %}{% endblock %}">
+                <a href="{% url 'admin_leave_calendar' %}">
+                    <i class="bi bi-calendar3"></i>
+                    <span>Leave Calendar</span>
+                </a>
+            </li>
+            <li class="{% block active_attendance_management %}{% endblock %}">
+                <a href="{% url 'attendance_management' %}">
+                    <i class="bi bi-calendar2-week"></i>
+                    <span>Attendance Register</span>
                 </a>
             </li>
             {% else %}
@@ -315,6 +351,14 @@
                     <span>Attendance</span>
                 </a>
             </li>
+            {% if request.user.direct_reports.exists %}
+            <li class="{% block active_manager_team_attendance %}{% endblock %}">
+                <a href="{% url 'attendance_management' %}">
+                    <i class="bi bi-calendar2-week"></i>
+                    <span>Team Attendance</span>
+                </a>
+            </li>
+            {% endif %}
             <li class="{% block active_apply_leave %}{% endblock %}">
                 <a href="{% url 'employee_leaves' %}">
                     <i class="bi bi-calendar2-plus"></i>
@@ -368,7 +412,7 @@
                     <small class="text-muted text-uppercase" style="font-size: 0.75rem; letter-spacing: 0.05em;">{{ request.user.role }}</small>
                 </div>
                 <div class="bg-white border border-light-subtle rounded-circle d-flex align-items-center justify-content-center overflow-hidden" style="width: 45px; height: 45px; flex: 0 0 45px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05)">
-                    {% block user_avatar %}{% with avatar_user=request.user avatar_emoji_size='1.5rem' %}{% include 'core/partials/avatar.html' %}{% endwith %}{% endblock %}
+                    {% block user_avatar %}{% with avatar_user=request.user %}{% include 'core/partials/avatar.html' %}{% endwith %}{% endblock %}
                 </div>
             </div>
         </div>

@@ -1,0 +1,33 @@
+{% extends 'admin_dashboard/base.html' %}
+{% block title %}Leave Policies | HRMS{% endblock %}
+{% block active_leave_policies %}active{% endblock %}
+{% block header_content %}
+<h1>Leave Policies</h1>
+<p class="text-muted mb-0">Configure annual entitlements and document requirements for each leave category.</p>
+{% endblock %}
+{% block content %}
+<section class="glass-card">
+    <div class="alert alert-info">
+        An employee-specific quota takes precedence over the annual quota configured here. Leave without an annual quota is not balance-limited.
+    </div>
+    <div class="row g-3">
+        {% for policy, label, form in policy_rows %}
+        <div class="col-12 col-lg-6">
+            <form method="post" class="border rounded-3 p-3 h-100">
+                {% csrf_token %}
+                <input type="hidden" name="policy_id" value="{{ policy.pk }}">
+                <h2 class="h6 fw-bold mb-3">{{ label }}</h2>
+                <div class="mb-3">
+                    <label class="form-label small" for="{{ form.annual_quota.id_for_label }}">Annual quota (working days)</label>
+                    {{ form.annual_quota }}
+                    {% if form.annual_quota.errors %}<small class="text-danger">{{ form.annual_quota.errors }}</small>{% endif %}
+                </div>
+                <div class="form-check mb-2">{{ form.is_paid }}<label class="form-check-label" for="{{ form.is_paid.id_for_label }}">Paid leave</label></div>
+                <div class="form-check mb-3">{{ form.requires_document }}<label class="form-check-label" for="{{ form.requires_document.id_for_label }}">Require supporting document</label></div>
+                <button class="btn btn-premium btn-sm" type="submit">Save policy</button>
+            </form>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}

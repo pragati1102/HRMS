@@ -4,7 +4,7 @@
 {% block active_profile %}active{% endblock %}
 
 {% block user_avatar %}
-{% with avatar_user=request.user avatar_emoji_size='1.5rem' %}{% include 'core/partials/avatar.html' %}{% endwith %}
+{% with avatar_user=request.user %}{% include 'core/partials/avatar.html' %}{% endwith %}
 {% endblock %}
 
 {% block header_content %}
@@ -17,7 +17,7 @@
     <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
         <div class="d-flex align-items-center gap-3">
             <div class="rounded-circle bg-light border d-flex align-items-center justify-content-center overflow-hidden" style="width: 96px; height: 96px; flex: 0 0 96px;">
-                {% with avatar_user=request.user avatar_emoji_size='3rem' %}{% include 'core/partials/avatar.html' %}{% endwith %}
+                {% with avatar_user=request.user %}{% include 'core/partials/avatar.html' %}{% endwith %}
             </div>
             <div>
                 <h2 class="h4 fw-bold mb-1">{{ request.user.get_full_name|default:request.user.username }}</h2>

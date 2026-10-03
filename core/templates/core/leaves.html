@@ -18,8 +18,8 @@
                     <div class="fs-5 fw-bold text-indigo">{{ quota.available|floatformat:"-1" }} remaining</div>
                     <div class="small text-muted">{{ quota.used|floatformat:"-1" }} used / {{ quota.quota }} total{% if quota.pending %} · {{ quota.pending|floatformat:"-1" }} pending{% endif %}</div>
                 {% else %}
-                    <div class="fs-5 fw-bold text-secondary">Not configured</div>
-                    <div class="small text-muted">Ask HR to set your quota</div>
+                    <div class="fs-5 fw-bold text-secondary">No quota limit</div>
+                    <div class="small text-muted">Requests still require approval</div>
                 {% endif %}
             </div>
         </div>
@@ -106,6 +106,7 @@
                 <a class="nav-link{% if leave_filter == 'pending' %} active{% endif %}" href="{% url 'employee_leaves' %}?status=pending&amp;q={{ search_query|urlencode }}">Pending <span class="badge bg-light text-dark ms-1">{{ leave_filter_counts.pending }}</span></a>
                 <a class="nav-link{% if leave_filter == 'approved' %} active{% endif %}" href="{% url 'employee_leaves' %}?status=approved&amp;q={{ search_query|urlencode }}">Approved</a>
                 <a class="nav-link{% if leave_filter == 'rejected' %} active{% endif %}" href="{% url 'employee_leaves' %}?status=rejected&amp;q={{ search_query|urlencode }}">Rejected</a>
+                <a class="nav-link{% if leave_filter == 'cancelled' %} active{% endif %}" href="{% url 'employee_leaves' %}?status=cancelled&amp;q={{ search_query|urlencode }}">Cancelled</a>
             </nav>
 
             <div class="table-responsive">
@@ -127,9 +128,9 @@
                                 </td>
                                 <td><span class="badge rounded-pill badge-{{ leave.status }} px-2 py-1">{{ leave.get_status_display }}</span></td>
                                 <td>
-                                    {% if leave.status == 'pending' %}
-                                        <form action="{% url 'employee_withdraw_leave' leave.id %}" method="POST" onsubmit="return confirm('Withdraw this leave application?');">
-                                            {% csrf_token %}<button type="submit" class="btn btn-outline-danger btn-sm text-nowrap">Withdraw</button>
+                                    {% if leave.status == 'pending' or leave.status == 'approved' and leave.start_date >= today %}
+                                        <form action="{% url 'employee_withdraw_leave' leave.id %}" method="POST" onsubmit="return confirm('Cancel this leave request?');">
+                                            {% csrf_token %}<button type="submit" class="btn btn-outline-danger btn-sm text-nowrap">{% if leave.status == 'approved' %}Cancel Leave{% else %}Withdraw{% endif %}</button>
                                         </form>
                                     {% else %}<span class="text-secondary">—</span>{% endif %}
                                 </td>
@@ -171,6 +172,11 @@
                 available: {% if quota.available != None %}{{ quota.available }}{% else %}null{% endif %},
             },{% endfor %}
         };
+        const policies = {
+            {% for leave_type, policy in leave_policy_settings.items %}'{{ leave_type }}': {
+                requiresDocument: {{ policy.requires_document|yesno:"true,false" }},
+            },{% endfor %}
+        };
 
         const selectedDuration = () => document.querySelector('input[name="half_day_session"]:checked').value;
         const countWorkingDays = () => {
@@ -193,11 +199,11 @@
             const total = countWorkingDays();
             totalLabel.textContent = `Total: ${total} Working Day${total === 1 ? '' : 's'}`;
             const balance = quotas[leaveType.value]?.available;
-            const balanceCheckedType = ['Casual', 'Sick', 'Paid'].includes(leaveType.value);
-            const exceeded = balanceCheckedType && balance !== null && balance !== undefined && total > balance;
+            const exceeded = balance !== null && balance !== undefined && total > balance;
             balanceWarning.textContent = exceeded ? `Exceeds available balance (${balance} days)` : '';
             submitButton.disabled = exceeded || total <= 0;
-            const needsDocument = ['Sick', 'Maternity', 'Paternity'].includes(leaveType.value);
+            const needsDocument = policies[leaveType.value]?.requiresDocument
+                ?? ['Sick', 'Maternity', 'Paternity'].includes(leaveType.value);
             documentField.classList.toggle('d-none', !needsDocument);
             documentInput.required = needsDocument;
             endDate.readOnly = selectedDuration() !== 'full';

@@ -4,12 +4,13 @@ import shutil
 import tempfile
 from decimal import Decimal
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core import mail
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from PIL import Image
 from openpyxl import load_workbook
 from django.utils import timezone
-from core.models import Attendance, AttendanceCorrectionRequest, CompanyHoliday, EmployeeDocument, LeaveApplication, PayrollTaxDocument, Project, ProjectAssignment, ProjectMilestone, ProjectResource, ProjectTask, ProjectTechnology, Salary, SalaryComponent, User, WorkLog
+from core.models import Attendance, AttendanceCorrectionRequest, CompanyHoliday, EmployeeDocument, LeaveApplication, LeavePolicy, PayrollTaxDocument, Project, ProjectAssignment, ProjectMilestone, ProjectResource, ProjectTask, ProjectTechnology, Salary, SalaryComponent, User, WorkLog
 
 class SalaryDueDateTestCase(TestCase):
     def test_standard_due_date(self):
@@ -173,7 +174,7 @@ class EmployeeSalaryPayrollTestCase(TestCase):
 
 
 class EmployeeProfileTestCase(TestCase):
-    def test_profile_shows_employee_details_and_gender_avatar(self):
+    def test_profile_shows_employee_details_and_initials_avatar(self):
         employee = User.objects.create_user(
             username='jane',
             email='jane@example.com',
@@ -191,7 +192,7 @@ class EmployeeProfileTestCase(TestCase):
         self.assertContains(response, str(employee.id))
         self.assertContains(response, 'jane@example.com')
         self.assertContains(response, '12 Main Street')
-        self.assertContains(response, '👩‍💼')
+        self.assertContains(response, 'JD')
         self.assertNotContains(response, 'Contact Information')
         self.assertContains(response, 'name="gender"')
         self.assertContains(response, 'name="phone_number"')
@@ -349,6 +350,15 @@ class EmployeeAttendanceTestCase(TestCase):
         self.assertEqual(attendance.location_mode, 'office')
         self.assertEqual(attendance.check_in_ip, '127.0.0.1')
 
+    def test_repeated_checkin_does_not_create_duplicate_attendance(self):
+        self.client.post(reverse('employee_check_in'), {'location_mode': 'office'})
+        self.client.post(reverse('employee_check_in'), {'location_mode': 'remote'})
+
+        self.assertEqual(
+            Attendance.objects.filter(employee=self.employee, date=timezone.localdate()).count(),
+            1,
+        )
+
     def test_break_resume_accumulates_duration(self):
         attendance = Attendance.objects.create(
             employee=self.employee,
@@ -436,6 +446,54 @@ class EmployeeAttendanceTestCase(TestCase):
         self.assertEqual(response.context['overtime_time'], '1h 00m')
         self.assertEqual(response.context['late_arrivals'], 1)
         self.assertEqual(response.context['early_checkouts'], 1)
+
+    def test_manager_can_review_direct_report_regularization(self):
+        manager = User.objects.create_user(username='attendance-manager', role='employee')
+        self.employee.manager = manager
+        self.employee.save(update_fields=['manager'])
+        correction = AttendanceCorrectionRequest.objects.create(
+            employee=self.employee,
+            date=timezone.localdate() - datetime.timedelta(days=1),
+            requested_check_in=datetime.time(9, 0),
+            requested_check_out=datetime.time(17, 0),
+            reason='Forgot to punch',
+        )
+        self.client.force_login(manager)
+
+        page = self.client.get(reverse('attendance_management'))
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, 'Forgot to punch')
+        response = self.client.post(reverse('attendance_management'), {
+            'correction_id': correction.pk,
+            'action': 'approve',
+            'approval_notes': 'Verified with the team lead.',
+        })
+
+        self.assertRedirects(response, reverse('attendance_management'))
+        correction.refresh_from_db()
+        attendance = Attendance.objects.get(employee=self.employee, date=correction.date)
+        self.assertEqual(correction.status, 'approved')
+        self.assertEqual(correction.reviewed_by, manager)
+        self.assertEqual(attendance.check_in, datetime.time(9, 0))
+        self.assertEqual(attendance.check_out, datetime.time(17, 0))
+
+    def test_attendance_register_flags_past_missing_days_and_manager_scope(self):
+        manager = User.objects.create_user(username='register-manager', role='employee')
+        self.employee.manager = manager
+        self.employee.save(update_fields=['manager'])
+        day = timezone.localdate() - datetime.timedelta(days=1)
+        while day.weekday() >= 5 or CompanyHoliday.objects.filter(date=day).exists():
+            day -= datetime.timedelta(days=1)
+        self.client.force_login(manager)
+
+        response = self.client.get(reverse('attendance_management'), {'date': day.isoformat()})
+
+        self.assertEqual(response.status_code, 200)
+        employee_row = next(row for row in response.context['daily_rows'] if row['employee'] == self.employee)
+        self.assertTrue(employee_row['missing_check_in'])
+        self.assertContains(response, 'Missing check-in')
+        self.assertContains(response, self.employee.username)
+        self.assertNotContains(response, self.other_employee.username)
 
 
 class EmployeeWorkLogExportTestCase(TestCase):
@@ -736,6 +794,134 @@ class EmployeeLeaveTestCase(TestCase):
         employee_history = self.client.get(reverse('employee_leaves'), {'status': 'rejected'})
         self.assertContains(employee_history, 'leave-admin')
         self.assertContains(employee_history, 'Please resubmit with dates corrected.')
+
+    def test_pending_and_approved_leave_overlap_is_rejected(self):
+        day = self.next_weekday()
+        LeaveApplication.objects.create(
+            employee=self.employee,
+            start_date=day,
+            end_date=day,
+            reason='Already submitted',
+        )
+
+        self.client.post(reverse('employee_apply_leave'), {
+            'leave_type': 'Casual',
+            'half_day_session': 'full',
+            'start_date': day.isoformat(),
+            'end_date': day.isoformat(),
+            'reason': 'Overlapping request',
+        })
+
+        self.assertEqual(LeaveApplication.objects.filter(employee=self.employee).count(), 1)
+
+    def test_global_earned_leave_quota_is_enforced(self):
+        LeavePolicy.objects.filter(leave_type='Earned').update(annual_quota=1)
+        start = self.next_weekday()
+        end = self.next_weekday(start + datetime.timedelta(days=1))
+        self.client.post(reverse('employee_apply_leave'), {
+            'leave_type': 'Earned',
+            'half_day_session': 'full',
+            'start_date': start.isoformat(),
+            'end_date': end.isoformat(),
+            'reason': 'Annual leave',
+        })
+
+        self.assertFalse(LeaveApplication.objects.filter(employee=self.employee).exists())
+        response = self.client.get(reverse('employee_leaves'))
+        earned_summary = next(
+            item for item in response.context['leave_quota_summary']
+            if item['leave_type'] == 'Earned'
+        )
+        self.assertEqual(earned_summary['quota'], 1)
+
+    def test_admin_can_configure_leave_policy(self):
+        administrator = User.objects.create_user(username='policy-admin', role='admin')
+        self.client.force_login(administrator)
+        policy = LeavePolicy.objects.get(leave_type='Earned')
+
+        page = self.client.get(reverse('leave_policies'))
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, 'Earned')
+        response = self.client.post(reverse('leave_policies'), {
+            'policy_id': policy.pk,
+            'annual_quota': '12',
+            'is_paid': 'on',
+        })
+
+        self.assertRedirects(response, reverse('leave_policies'))
+        policy.refresh_from_db()
+        self.assertEqual(policy.annual_quota, 12)
+        self.assertTrue(policy.is_paid)
+        self.assertFalse(policy.requires_document)
+
+    def test_admin_leave_calendar_shows_holidays_and_approved_leave(self):
+        day = self.next_weekday()
+        CompanyHoliday.objects.create(date=day, name='Founders Day')
+        LeaveApplication.objects.create(
+            employee=self.employee,
+            start_date=day,
+            end_date=day,
+            reason='Calendar event',
+            status='approved',
+            leave_type='Earned',
+        )
+        administrator = User.objects.create_user(username='calendar-admin', role='admin')
+        self.client.force_login(administrator)
+
+        response = self.client.get(reverse('admin_leave_calendar'), {
+            'month': day.month,
+            'year': day.year,
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Founders Day')
+        self.assertContains(response, 'leave-user')
+
+    def test_approved_future_leave_can_be_cancelled_and_releases_balance(self):
+        day = self.next_weekday()
+        application = LeaveApplication.objects.create(
+            employee=self.employee,
+            start_date=day,
+            end_date=day,
+            reason='Change of plans',
+            status='approved',
+        )
+
+        response = self.client.post(reverse('employee_withdraw_leave', args=[application.pk]))
+
+        self.assertRedirects(response, reverse('employee_leaves'))
+        application.refresh_from_db()
+        self.assertEqual(application.status, 'cancelled')
+        summary = next(
+            item for item in self.client.get(reverse('employee_leaves')).context['leave_quota_summary']
+            if item['leave_type'] == 'Casual'
+        )
+        self.assertEqual(summary['used'], Decimal('0'))
+
+    @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+    def test_leave_approval_sends_status_email_with_reviewer_comment(self):
+        self.employee.email = 'employee@example.com'
+        self.employee.save(update_fields=['email'])
+        application = LeaveApplication.objects.create(
+            employee=self.employee,
+            start_date=self.next_weekday(),
+            end_date=self.next_weekday(),
+            reason='Annual leave',
+        )
+        administrator = User.objects.create_user(username='mail-leave-admin', role='admin')
+        self.client.force_login(administrator)
+
+        with self.captureOnCommitCallbacks(execute=True):
+            self.client.post(reverse('leave_approvals'), {
+                'application_id': application.pk,
+                'action': 'approve',
+                'approval_notes': 'Approved by HR.',
+            })
+
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ['employee@example.com'])
+        self.assertIn('approved', mail.outbox[0].subject.lower())
+        self.assertIn('Approved by HR.', mail.outbox[0].body)
 
     def test_pending_leave_can_be_withdrawn_only_by_its_owner(self):
         day = self.next_weekday()
