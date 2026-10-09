@@ -1,4 +1,4 @@
-# Antigravity HRMS
+# HRMS
 
 Django 6.1 + Django REST Framework HRMS. `core` contains the custom user, attendance, work logs, leave, salary, project, and employee self-service features. `admin_dashboard` provides role-protected admin pages, employee management, leave approvals, and workforce analytics. SQLite is configured for local development.
 
