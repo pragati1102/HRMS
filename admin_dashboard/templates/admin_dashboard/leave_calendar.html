@@ -7,6 +7,27 @@
 {% endblock %}
 {% block content %}
 <section class="glass-card">
+    <div class="mb-4">
+        <h2 class="h5 fw-bold mb-3">Add company holiday(s)</h2>
+        <form method="post" action="?month={{ selected_month }}&amp;year={{ selected_year }}" class="row g-3 align-items-end">
+            {% csrf_token %}
+            {% if holiday_form.non_field_errors %}
+            <div class="col-12">
+                {% for error in holiday_form.non_field_errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+            </div>
+            {% endif %}
+            {% for field in holiday_form %}
+            <div class="{% if field.name == 'name' %}col-md-4{% else %}col-md-3{% endif %}">
+                <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                {{ field }}
+                {% for error in field.errors %}<div class="text-danger small mt-1">{{ error }}</div>{% endfor %}
+            </div>
+            {% endfor %}
+            <div class="col-md-3">
+                <button class="btn btn-premium w-100" type="submit">Add holiday(s)</button>
+            </div>
+        </form>
+    </div>
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
         <div class="d-flex align-items-center gap-2">
             <a class="btn btn-outline-premium btn-sm" href="?month={{ prev_month }}&amp;year={{ prev_year }}" aria-label="Previous month"><i class="bi bi-chevron-left"></i></a>
@@ -35,7 +56,16 @@
                     <td class="{% if not day.is_current_month %}text-secondary bg-light{% endif %}{% if day.is_today %} border border-primary border-2{% endif %}">
                         <div class="fw-semibold">{{ day.date.day }}</div>
                         {% for event in day.events %}
-                        <div class="calendar-event {% if event.kind == 'holiday' %}calendar-holiday{% else %}calendar-leave{% endif %}" title="{{ event.title }}">{{ event.title }}</div>
+                        <div class="calendar-event {% if event.kind == 'holiday' %}calendar-holiday{% else %}calendar-leave{% endif %}" title="{{ event.title }}">
+                            <span>{{ event.title }}</span>
+                            {% if event.kind == 'holiday' %}
+                            <form method="post" class="d-inline" onsubmit="return confirm('Undo this company holiday?');">
+                                {% csrf_token %}
+                                <input type="hidden" name="holiday_id" value="{{ event.holiday_id }}">
+                                <button type="submit" class="btn btn-link btn-sm p-0 ms-1 calendar-undo" aria-label="Undo {{ event.title }}">Undo</button>
+                            </form>
+                            {% endif %}
+                        </div>
                         {% endfor %}
                     </td>
                     {% endfor %}
@@ -44,10 +74,6 @@
             </tbody>
         </table>
     </div>
-    <div class="d-flex gap-3 small mt-3">
-        <span><span class="calendar-key calendar-leave"></span> Approved leave</span>
-        <span><span class="calendar-key calendar-holiday"></span> Company holiday</span>
-    </div>
 </section>
 <style>
     .leave-calendar-table { table-layout: fixed; min-width: 720px; }
@@ -55,6 +81,7 @@
     .calendar-event { border-radius: .35rem; font-size: .72rem; margin-top: .3rem; overflow: hidden; padding: .2rem .35rem; text-overflow: ellipsis; }
     .calendar-leave { background: #eef2ff; color: #4338ca; }
     .calendar-holiday { background: #fff7ed; color: #c2410c; }
-    .calendar-key { display: inline-block; width: .75rem; height: .75rem; border-radius: .2rem; margin-right: .25rem; vertical-align: -1px; }
+    .calendar-undo { color: inherit; font-size: .68rem; }
+    .calendar-undo:hover { color: #991b1b; }
 </style>
 {% endblock %}

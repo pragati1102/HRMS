@@ -4,6 +4,7 @@ from django.core.exceptions import ValidationError
 from django.db.models import Q
 
 from core.models import (
+    CompanyHoliday,
     Department,
     Designation,
     EmployeeDocument,
@@ -11,6 +12,35 @@ from core.models import (
     SalaryStructure,
     User,
 )
+
+
+class CompanyHolidayForm(forms.ModelForm):
+    start_date = forms.DateField(
+        label='From',
+        widget=forms.DateInput(attrs={'type': 'date'}),
+    )
+    end_date = forms.DateField(
+        label='To',
+        widget=forms.DateInput(attrs={'type': 'date'}),
+    )
+
+    class Meta:
+        model = CompanyHoliday
+        fields = ['name']
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['name'].label = 'Holiday name'
+        for field in self.fields.values():
+            field.widget.attrs['class'] = 'form-control'
+
+    def clean(self):
+        cleaned_data = super().clean()
+        start_date = cleaned_data.get('start_date')
+        end_date = cleaned_data.get('end_date')
+        if start_date and end_date and start_date > end_date:
+            self.add_error('end_date', 'The end date must be on or after the start date.')
+        return cleaned_data
 
 
 class LeavePolicyForm(forms.ModelForm):
@@ -63,10 +93,7 @@ class DepartmentForm(forms.ModelForm):
         cleaned_data = super().clean()
         head = cleaned_data.get('head')
         parent = cleaned_data.get('parent_department')
-        if head and self.instance.pk and head.department_record_id not in {
-            None,
-            self.instance.pk,
-        }:
+        if head and head.department_record_id not in {None, self.instance.pk}:
             self.add_error('head', 'The department head must belong to this department.')
         if parent and self.instance.pk:
             descendant_ids = set()
@@ -131,6 +158,7 @@ class SalaryStructureForm(forms.ModelForm):
         self.fields['employee'].queryset = User.objects.filter(
             role='employee',
         ).order_by('first_name', 'last_name', 'username')
+        self.fields['employee'].disabled = bool(self.instance.pk)
         for field in self.fields.values():
             if isinstance(field.widget, forms.CheckboxInput):
                 field.widget.attrs['class'] = 'form-check-input'

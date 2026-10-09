@@ -35,10 +35,11 @@
             min-height: 100vh;
             color: #94a3b8;
             box-shadow: 4px 0 24px rgba(0, 0, 0, 0.05);
-            transition: all 0.3s ease;
+            transition: transform 0.25s ease;
             position: fixed;
             width: 260px;
             z-index: 100;
+            overflow-y: auto;
         }
 
         .sidebar .brand {
@@ -63,6 +64,16 @@
 
         .sidebar-menu li {
             padding: 4px 16px;
+        }
+
+        .sidebar-menu .sidebar-section {
+            padding: 20px 20px 6px;
+            color: #64748b;
+            font-size: 0.68rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            pointer-events: none;
         }
 
         .sidebar-menu a {
@@ -95,6 +106,15 @@
             padding: 40px;
             min-height: 100vh;
             transition: all 0.3s ease;
+        }
+
+        .mobile-nav-toggle {
+            display: none;
+            flex: 0 0 auto;
+        }
+
+        .sidebar-backdrop {
+            display: none;
         }
 
         /* Top Header Styling */
@@ -269,6 +289,43 @@
             color: #6366f1;
             background-color: #f8fafc;
         }
+
+        @media (max-width: 991.98px) {
+            .sidebar {
+                transform: translateX(-100%);
+            }
+
+            body.sidebar-open .sidebar {
+                transform: translateX(0);
+            }
+
+            .sidebar-backdrop {
+                position: fixed;
+                inset: 0;
+                z-index: 90;
+                border: 0;
+                background: rgba(15, 23, 42, 0.45);
+            }
+
+            body.sidebar-open .sidebar-backdrop {
+                display: block;
+            }
+
+            .main-content {
+                margin-left: 0;
+                padding: 28px;
+            }
+
+            .mobile-nav-toggle {
+                display: inline-flex;
+            }
+        }
+
+        @media (max-width: 575.98px) {
+            .main-content {
+                padding: 20px 16px;
+            }
+        }
     </style>
     <!-- HTMX for dynamic content loading -->
     <script src="https://unpkg.com/htmx.org@1.9.6"></script>
@@ -277,19 +334,21 @@
 <body>
 
     <!-- Sidebar Navigation -->
-    <div class="sidebar">
+    <aside class="sidebar" id="primary-sidebar" aria-label="Primary navigation">
         <div class="brand">
             <i class="bi bi-rocket-takeoff-fill fs-4"></i>
             <span>Antigravity HRMS</span>
         </div>
         <ul class="sidebar-menu">
             {% if request.user.role == 'admin' %}
+            <li class="sidebar-section">Workspace</li>
             <li class="{% block active_admin_dashboard %}{% endblock %}">
                 <a href="{% url 'admin_dashboard' %}">
                     <i class="bi bi-speedometer2"></i>
                     <span>Dashboard</span>
                 </a>
             </li>
+            <li class="sidebar-section">People &amp; Organization</li>
             <li class="{% block active_employees %}{% endblock %}">
                 <a href="{% url 'employee_list' %}">
                     <i class="bi bi-people-fill"></i>
@@ -302,6 +361,7 @@
                     <span>Organization</span>
                 </a>
             </li>
+            <li class="sidebar-section">Operations</li>
             <li class="{% block active_payroll %}{% endblock %}">
                 <a href="{% url 'payroll_management' %}">
                     <i class="bi bi-cash-stack"></i>
@@ -333,6 +393,7 @@
                 </a>
             </li>
             {% else %}
+            <li class="sidebar-section">My Workspace</li>
             <li class="{% block active_dashboard %}{% endblock %}">
                 <a href="{% url 'employee_dashboard' %}">
                     <i class="bi bi-speedometer2"></i>
@@ -390,6 +451,7 @@
                 </a>
             </li>
             {% endif %}
+            <li class="sidebar-section">Account</li>
             <li>
                 <a href="{% url 'admin_logout' %}">
                     <i class="bi bi-box-arrow-right"></i>
@@ -397,14 +459,25 @@
                 </a>
             </li>
         </ul>
-    </div>
+    </aside>
+    <div class="sidebar-backdrop" data-sidebar-close aria-hidden="true"></div>
 
     <!-- Main Workspace -->
     <div class="main-content">
         <!-- Top Navigation Header -->
         <div class="top-header">
-            <div>
-                {% block header_content %}{% endblock %}
+            <div class="d-flex align-items-start gap-3">
+                <button
+                    type="button"
+                    class="btn btn-outline-premium mobile-nav-toggle"
+                    aria-label="Open navigation"
+                    aria-controls="primary-sidebar"
+                    aria-expanded="false"
+                    data-sidebar-toggle
+                >
+                    <i class="bi bi-list fs-5" aria-hidden="true"></i>
+                </button>
+                <div>{% block header_content %}{% endblock %}</div>
             </div>
             <div class="d-flex align-items-center gap-3">
                 <div class="text-end d-none d-md-block">
@@ -436,6 +509,33 @@
 
     <!-- Bootstrap Bundle JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        (() => {
+            const toggle = document.querySelector('[data-sidebar-toggle]');
+            const backdrop = document.querySelector('[data-sidebar-close]');
+            if (!toggle || !backdrop) return;
+
+            const setSidebarOpen = (isOpen) => {
+                document.body.classList.toggle('sidebar-open', isOpen);
+                toggle.setAttribute('aria-expanded', String(isOpen));
+            };
+
+            toggle.addEventListener('click', () => {
+                setSidebarOpen(toggle.getAttribute('aria-expanded') !== 'true');
+            });
+            backdrop.addEventListener('click', () => setSidebarOpen(false));
+            document.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape') setSidebarOpen(false);
+            });
+            document.querySelectorAll('.sidebar a').forEach((link) => {
+                link.addEventListener('click', () => {
+                    if (window.matchMedia('(max-width: 991.98px)').matches) {
+                        setSidebarOpen(false);
+                    }
+                });
+            });
+        })();
+    </script>
     {% block extra_js %}{% endblock %}
 </body>
 </html>

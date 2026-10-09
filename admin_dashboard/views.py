@@ -4,6 +4,7 @@ import csv
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from django.core.exceptions import PermissionDenied
+from django.core.paginator import Paginator
 from django.db import transaction
 from django.views.generic import ListView, DetailView, TemplateView
 from django.db.models import Q, Count
@@ -11,6 +12,7 @@ from django.http import FileResponse, Http404, HttpResponse
 from django.contrib.auth.views import LoginView
 from django.contrib.auth import logout
 from django.contrib import messages
+from django.db import transaction
 from django.shortcuts import redirect, render, get_object_or_404
 from django.urls import reverse
 from django.views import View
@@ -46,6 +48,7 @@ from .forms import (
     DesignationForm,
     EmployeeDocumentForm,
     EmployeeManagementForm,
+    CompanyHolidayForm,
     LeavePolicyForm,
     SalaryStructureForm,
 )
@@ -945,7 +948,10 @@ class DepartmentManagementView(AdminRoleRequiredMixin, View):
                     User.objects.filter(department_record=department).update(
                         department=department.name,
                     )
-                if department.head and department.head.department_record_id is None:
+                if (
+                    department.head
+                    and department.head.department_record_id != department.pk
+                ):
                     department.head.department_record = department
                     department.head.department = department.name
                     head_update_fields = ['department_record', 'department']
@@ -1054,23 +1060,64 @@ def _period_workdays(start_date, end_date, holidays):
     return count
 
 
-def _create_monthly_salary(employee, structure_revision, year, month, month_start, month_end, holidays):
-    month_workdays = _period_workdays(month_start, month_end, holidays)
+def _create_monthly_salary(
+    employee,
+    structure_revisions,
+    year,
+    month,
+    month_start,
+    month_end,
+    holidays,
+    leave_policies,
+):
+    revisions = sorted(
+        (revision for revision in structure_revisions if revision.effective_from <= month_end),
+        key=lambda revision: (revision.effective_from, revision.pk or 0),
+    )
+    if not revisions:
+        return None
+
     eligible_start = max(
         month_start,
-        structure_revision.effective_from,
         employee.joining_date or month_start,
+        revisions[0].effective_from,
     )
-    eligible_workdays = _period_workdays(eligible_start, month_end, holidays)
+    if eligible_start > month_end:
+        return None
+
+    revision_at_start = next(
+        (
+            revision for revision in reversed(revisions)
+            if revision.effective_from <= eligible_start
+        ),
+        None,
+    )
+    if revision_at_start is None:
+        return None
+
+    period_revisions = [revision_at_start]
+    period_revisions.extend(
+        revision
+        for revision in revisions
+        if eligible_start < revision.effective_from <= month_end
+    )
+    salary_periods = []
+    for index, revision in enumerate(period_revisions):
+        period_start = max(eligible_start, revision.effective_from)
+        period_end = month_end
+        if index + 1 < len(period_revisions):
+            period_end = period_revisions[index + 1].effective_from - datetime.timedelta(days=1)
+        workdays = _period_workdays(period_start, period_end, holidays)
+        if workdays:
+            salary_periods.append((revision, period_start, period_end, workdays))
+
+    month_workdays = _period_workdays(month_start, month_end, holidays)
+    eligible_workdays = sum(period[3] for period in salary_periods)
     if not month_workdays or not eligible_workdays:
         return None
 
     unpaid_by_date = {}
-    if structure_revision.attendance_based:
-        leave_policies = {
-            policy.leave_type: policy.is_paid
-            for policy in LeavePolicy.objects.all()
-        }
+    if any(revision.attendance_based for revision, _, _, _ in salary_periods):
         paid_leave_types = [
             leave_type
             for leave_type, _ in LeaveApplication.LEAVE_TYPE_CHOICES
@@ -1128,23 +1175,60 @@ def _create_monthly_salary(employee, structure_revision, year, month, month_star
                         amount,
                     )
                 current_date += datetime.timedelta(days=1)
-    unpaid_units = min(
-        Decimal(eligible_workdays),
-        sum(unpaid_by_date.values(), Decimal('0')),
-    )
-    period_factor = Decimal(eligible_workdays) / Decimal(month_workdays)
     money = Decimal('0.01')
-    basic = (structure_revision.basic_salary * period_factor).quantize(money, rounding=ROUND_HALF_UP)
-    hra = (structure_revision.hra * period_factor).quantize(money, rounding=ROUND_HALF_UP)
-    allowances = (structure_revision.allowances * period_factor).quantize(money, rounding=ROUND_HALF_UP)
-    fixed_deductions = (
-        structure_revision.deductions * period_factor
-    ).quantize(money, rounding=ROUND_HALF_UP)
-    unpaid_deduction = (
-        structure_revision.basic_salary
-        + structure_revision.hra
-        + structure_revision.allowances
-    ) * unpaid_units / Decimal(month_workdays)
+    basic = Decimal('0')
+    hra = Decimal('0')
+    allowances = Decimal('0')
+    fixed_deductions = Decimal('0')
+    unpaid_deduction = Decimal('0')
+    adjusted_dates = set()
+    deduction_formulas = []
+    fixed_deduction_formulas = []
+    for revision, period_start, period_end, workdays in salary_periods:
+        period_factor = Decimal(workdays) / Decimal(month_workdays)
+        basic += (revision.basic_salary * period_factor).quantize(
+            money,
+            rounding=ROUND_HALF_UP,
+        )
+        hra += (revision.hra * period_factor).quantize(
+            money,
+            rounding=ROUND_HALF_UP,
+        )
+        allowances += (revision.allowances * period_factor).quantize(
+            money,
+            rounding=ROUND_HALF_UP,
+        )
+        fixed_deductions += (revision.deductions * period_factor).quantize(
+            money,
+            rounding=ROUND_HALF_UP,
+        )
+        if revision.deductions:
+            fixed_deduction_formulas.append(
+                f'{revision.deductions} monthly for {period_start} to {period_end}'
+            )
+        if revision.attendance_based:
+            period_unpaid = {
+                date: amount
+                for date, amount in unpaid_by_date.items()
+                if period_start <= date <= period_end
+            }
+            unpaid_units = min(
+                Decimal(workdays),
+                sum(period_unpaid.values(), Decimal('0')),
+            )
+            if unpaid_units:
+                unpaid_deduction += (
+                    revision.gross_salary * unpaid_units / Decimal(month_workdays)
+                ).quantize(money, rounding=ROUND_HALF_UP)
+                adjusted_dates.update(period_unpaid)
+                deduction_formulas.append(
+                    f'{unpaid_units} unpaid workdays for {period_start} to {period_end}'
+                )
+
+    basic = basic.quantize(money, rounding=ROUND_HALF_UP)
+    hra = hra.quantize(money, rounding=ROUND_HALF_UP)
+    allowances = allowances.quantize(money, rounding=ROUND_HALF_UP)
+    fixed_deductions = fixed_deductions.quantize(money, rounding=ROUND_HALF_UP)
     unpaid_deduction = unpaid_deduction.quantize(money, rounding=ROUND_HALF_UP)
     gross = basic + hra + allowances
     fixed_deductions = min(fixed_deductions, gross)
@@ -1159,8 +1243,8 @@ def _create_monthly_salary(employee, structure_revision, year, month, month_star
         amount=net_pay,
         status='pending',
         remarks=(
-            f'Generated from salary structure effective {structure_revision.effective_from}. '
-            f'Attendance-based pro-rating {"enabled" if structure_revision.attendance_based else "disabled"}.'
+            f'Generated from {len(salary_periods)} effective salary period(s). '
+            f'Attendance-based pro-rating applied per salary revision.'
         ),
     )
     for name, amount in (
@@ -1180,7 +1264,7 @@ def _create_monthly_salary(employee, structure_revision, year, month, month_star
             component_type='deduction',
             name='Other Deductions',
             amount=fixed_deductions,
-            formula=f'Monthly deductions pro-rated for {eligible_workdays}/{month_workdays} scheduled workdays',
+            formula='; '.join(fixed_deduction_formulas),
         )
     if unpaid_deduction:
         SalaryComponent.objects.create(
@@ -1188,8 +1272,8 @@ def _create_monthly_salary(employee, structure_revision, year, month, month_star
             component_type='deduction',
             name='Unpaid / Absence Adjustment',
             amount=unpaid_deduction,
-            formula=f'{unpaid_units} unpaid workdays at monthly gross / {month_workdays} workdays',
-            dates=[date.isoformat() for date in sorted(unpaid_by_date)],
+            formula='; '.join(deduction_formulas),
+            dates=[date.isoformat() for date in sorted(adjusted_dates)],
         )
     return salary
 
@@ -1225,21 +1309,37 @@ class PayrollManagementView(AdminRoleRequiredMixin, View):
             'employee__last_name',
             'employee__first_name',
         )
-        rows = [get_salary_breakdown(salary) for salary in salaries]
+        payroll_page = Paginator(salaries, 50).get_page(
+            request.GET.get('payroll_page'),
+        )
+        rows = [get_salary_breakdown(salary) for salary in payroll_page]
         structures = SalaryStructure.objects.filter(is_active=True).select_related(
             'employee',
             'employee__department_record',
         ).order_by('employee__last_name', 'employee__first_name')
+        structure_count = structures.count()
+        structure_page = Paginator(structures, 50).get_page(
+            request.GET.get('structure_page'),
+        )
+        current_year = timezone.localdate().year
+        payroll_years = set(range(current_year - 3, current_year + 1))
+        payroll_years.update(
+            Salary.objects.filter(year__gte=2000, year__lte=current_year)
+            .values_list('year', flat=True)
+            .distinct()
+        )
         context = {
             'rows': rows,
-            'structures': structures,
+            'payroll_page': payroll_page,
+            'structures': structure_page,
+            'structure_page': structure_page,
             'selected_month': month,
             'selected_year': year,
             'months': [(number, calendar.month_name[number]) for number in range(1, 13)],
-            'years': range(timezone.localdate().year - 3, timezone.localdate().year + 2),
+            'years': sorted(payroll_years, reverse=True),
             'pending_count': salaries.filter(status='pending').count(),
             'paid_count': salaries.filter(status='paid').count(),
-            'structure_count': structures.count(),
+            'structure_count': structure_count,
         }
         return render(request, self.template_name, context)
 
@@ -1251,6 +1351,10 @@ class PayrollManagementView(AdminRoleRequiredMixin, View):
             holiday_dates = set(CompanyHoliday.objects.filter(
                 date__range=(month_start, month_end),
             ).values_list('date', flat=True))
+            leave_policies = {
+                policy.leave_type: policy.is_paid
+                for policy in LeavePolicy.objects.all()
+            }
             created_count = 0
             missing_structure_count = 0
             employees = User.objects.filter(
@@ -1271,24 +1375,22 @@ class PayrollManagementView(AdminRoleRequiredMixin, View):
                 if not structure.is_active:
                     missing_structure_count += 1
                     continue
-                revision = next(
-                    (
-                        item for item in structure.revisions.all()
-                        if item.effective_from <= month_end
-                    ),
-                    None,
-                )
-                if not revision:
+                revisions = [
+                    item for item in structure.revisions.all()
+                    if item.effective_from <= month_end
+                ]
+                if not revisions:
                     missing_structure_count += 1
                     continue
                 if _create_monthly_salary(
                     employee,
-                    revision,
+                    revisions,
                     year,
                     month,
                     month_start,
                     month_end,
                     holiday_dates,
+                    leave_policies,
                 ):
                     created_count += 1
             messages.success(
@@ -1715,6 +1817,66 @@ class AdminLeaveCalendarView(AdminRoleRequiredMixin, View):
             messages.error(request, 'Select a valid calendar month and year.')
             month, year = today.month, today.year
 
+        return self.render_calendar(request, month, year)
+
+    def post(self, request):
+        if request.POST.get('holiday_id'):
+            holiday = get_object_or_404(
+                CompanyHoliday,
+                pk=request.POST['holiday_id'],
+            )
+            holiday_name = holiday.name
+            holiday_month = holiday.date.month
+            holiday_year = holiday.date.year
+            holiday.delete()
+            messages.success(request, f'{holiday_name} removed from the company holiday calendar.')
+            return redirect(
+                f"{reverse('admin_leave_calendar')}?month={holiday_month}&year={holiday_year}"
+            )
+
+        form = CompanyHolidayForm(request.POST)
+        if form.is_valid():
+            start_date = form.cleaned_data['start_date']
+            end_date = form.cleaned_data['end_date']
+            holiday_dates = [
+                start_date + datetime.timedelta(days=offset)
+                for offset in range((end_date - start_date).days + 1)
+            ]
+            existing_dates = set(
+                CompanyHoliday.objects.filter(date__range=(start_date, end_date))
+                .values_list('date', flat=True)
+            )
+            if existing_dates:
+                form.add_error(
+                    None,
+                    'A company holiday already exists on one or more dates in this range.',
+                )
+            else:
+                with transaction.atomic():
+                    CompanyHoliday.objects.bulk_create([
+                        CompanyHoliday(date=holiday_date, name=form.cleaned_data['name'])
+                        for holiday_date in holiday_dates
+                    ])
+                messages.success(
+                    request,
+                    f'{form.cleaned_data["name"]} added for {len(holiday_dates)} day(s).',
+                )
+                return redirect(
+                    f"{reverse('admin_leave_calendar')}?month={start_date.month}&year={start_date.year}"
+                )
+
+        today = timezone.localdate()
+        try:
+            month = int(request.GET.get('month', today.month))
+            year = int(request.GET.get('year', today.year))
+            if not 1 <= month <= 12 or not 2000 <= year <= today.year + 3:
+                raise ValueError
+        except (TypeError, ValueError):
+            month, year = today.month, today.year
+        return self.render_calendar(request, month, year, form)
+
+    def render_calendar(self, request, month, year, holiday_form=None):
+        today = timezone.localdate()
         month_start = datetime.date(year, month, 1)
         month_end = datetime.date(year, month, calendar.monthrange(year, month)[1])
         events_by_date = {}
@@ -1724,6 +1886,7 @@ class AdminLeaveCalendarView(AdminRoleRequiredMixin, View):
             events_by_date.setdefault(holiday.date, []).append({
                 'kind': 'holiday',
                 'title': holiday.name,
+                'holiday_id': holiday.pk,
             })
 
         approved_leaves = LeaveApplication.objects.filter(
@@ -1775,6 +1938,7 @@ class AdminLeaveCalendarView(AdminRoleRequiredMixin, View):
             'next_year': next_year,
             'months': [(number, calendar.month_name[number]) for number in range(1, 13)],
             'years': range(today.year - 3, today.year + 4),
+            'holiday_form': holiday_form or CompanyHolidayForm(),
         })
 
 
@@ -1793,35 +1957,36 @@ class AdminLeaveDocumentView(AdminRoleRequiredMixin, View):
 
 class AdminLoginView(LoginView):
     """
-    Sign in and route the user through the role-aware portal redirect.
+    Unified sign-in view for both admin and employee portals.
+    After successful authentication the user is redirected based on their role.
     """
     template_name = 'admin_dashboard/login.html'
     redirect_authenticated_user = False
 
-    def dispatch(self, request, *args, **kwargs):
-        self.expected_role = kwargs.pop('expected_role', 'admin')
-        self.login_url_name = 'admin_login' if self.expected_role == 'admin' else 'employee_login'
-        return super().dispatch(request, *args, **kwargs)
-
     def form_valid(self, form):
-        if getattr(form.get_user(), 'role', None) != self.expected_role:
-            messages.error(self.request, 'This account belongs to a different portal. Use the matching sign-in page.')
-            return redirect(self.login_url_name)
-        return super().form_valid(form)
+        # Let Django complete the login flow and then send the user to their role dashboard
+        response = super().form_valid(form)
+        return response
 
     def get_success_url(self):
-        return reverse('admin_dashboard' if self.expected_role == 'admin' else 'employee_dashboard')
+        user = getattr(self.request, 'user', None)
+        role = getattr(user, 'role', None)
+        if role == 'admin':
+            return reverse('admin_dashboard')
+        # default to employee dashboard for any other role (including None)
+        return reverse('employee_dashboard')
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['portal_title'] = 'HRMS Admin Portal' if self.expected_role == 'admin' else 'HRMS Employee Portal'
+        # Generic portal title for a single unified login page
+        context['portal_title'] = 'HRMS Portal'
         return context
 
 
 class AdminLogoutView(View):
     """
-    Simple View to log out and redirect to login page.
+    Log out and redirect to the unified login page.
     """
-    def get(self, request, portal='employee'):
+    def get(self, request):
         logout(request)
-        return redirect('admin_login' if portal == 'admin' else 'employee_login')
+        return redirect('login')

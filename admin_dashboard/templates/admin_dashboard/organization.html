@@ -50,7 +50,7 @@
             <h2 class="h5 fw-bold mb-3">Department directory</h2>
             <div class="table-responsive">
                 <table class="table table-hover align-middle">
-                    <thead class="table-light text-uppercase small"><tr><th>Department / hierarchy</th><th>Head</th><th>Employees</th><th>Status</th><th></th></tr></thead>
+                    <thead class="table-light text-uppercase small"><tr><th>Department / hierarchy</th><th>Head</th><th>Active employees</th><th>Status</th><th></th></tr></thead>
                     <tbody>
                         {% for department in departments %}
                         <tr>
@@ -74,7 +74,7 @@
                         {% for designation in designations %}
                         <tr>
                             <td>{{ designation.name }}</td><td>{{ designation.department.name }}</td><td>{{ designation.employee_count }}</td>
-                            <td>{% if designation.is_active %}Active{% else %}Inactive{% endif %}</td>
+                            <td><span class="badge {% if designation.is_active %}bg-success-subtle text-success{% else %}bg-secondary-subtle text-secondary{% endif %}">{% if designation.is_active %}Active{% else %}Inactive{% endif %}</span></td>
                             <td><a class="btn btn-outline-premium btn-sm" href="?designation={{ designation.pk }}">Edit</a></td>
                         </tr>
                         {% empty %}<tr><td colspan="5" class="text-center text-secondary py-4">No designations configured.</td></tr>{% endfor %}

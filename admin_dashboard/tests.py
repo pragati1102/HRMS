@@ -12,6 +12,7 @@ from django.test import override_settings
 from core.models import (
     Attendance,
     AttendanceCorrectionRequest,
+    CompanyHoliday,
     Department,
     Designation,
     LeaveApplication,
@@ -189,6 +190,19 @@ class AdminDashboardTests(TestCase):
         self.assertContains(response, 'No pending notifications.')
         self.assertContains(response, 'Employee account created')
 
+    def test_admin_navigation_is_grouped_and_mobile_toggle_is_accessible(self):
+        self.client.force_login(self.admin)
+
+        response = self.client.get(reverse('admin_dashboard'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'People &amp; Organization')
+        self.assertContains(response, 'Operations')
+        self.assertContains(response, 'aria-label="Open navigation"')
+        self.assertContains(response, 'aria-controls="primary-sidebar"')
+        self.assertContains(response, 'data-sidebar-toggle')
+        self.assertContains(response, 'data-sidebar-close')
+
     def test_root_opens_login_page_for_authenticated_admin(self):
         self.client.force_login(self.admin)
 
@@ -243,6 +257,63 @@ class AdminDashboardTests(TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertContains(response, 'Admin access required', status_code=403)
         self.assertContains(response, 'Log out and switch account', status_code=403)
+
+    def test_admin_can_add_company_holiday_range_from_leave_calendar(self):
+        holiday_start = datetime.date(2026, 12, 25)
+        holiday_end = datetime.date(2026, 12, 27)
+        self.client.force_login(self.admin)
+
+        response = self.client.post(reverse('admin_leave_calendar'), {
+            'start_date': holiday_start.isoformat(),
+            'end_date': holiday_end.isoformat(),
+            'name': 'Christmas Day',
+        })
+
+        holidays = CompanyHoliday.objects.filter(
+            date__range=(holiday_start, holiday_end),
+        ).order_by('date')
+        self.assertEqual(holidays.count(), 3)
+        self.assertEqual(list(holidays.values_list('name', flat=True)), ['Christmas Day'] * 3)
+        self.assertRedirects(
+            response,
+            f"{reverse('admin_leave_calendar')}?month=12&year=2026",
+        )
+        calendar_response = self.client.get(reverse('admin_leave_calendar'), {
+            'month': 12,
+            'year': 2026,
+        })
+        self.assertContains(calendar_response, 'Christmas Day')
+        self.assertNotContains(calendar_response, 'Approved leave</span>')
+        self.assertNotContains(calendar_response, 'Company holiday</span>')
+
+    def test_admin_can_undo_company_holiday_from_calendar(self):
+        holiday = CompanyHoliday.objects.create(
+            date=datetime.date(2026, 12, 25),
+            name='Christmas Day',
+        )
+        self.client.force_login(self.admin)
+
+        response = self.client.post(reverse('admin_leave_calendar'), {
+            'holiday_id': holiday.pk,
+        })
+
+        self.assertRedirects(
+            response,
+            f"{reverse('admin_leave_calendar')}?month=12&year=2026",
+        )
+        self.assertFalse(CompanyHoliday.objects.filter(pk=holiday.pk).exists())
+
+    def test_employee_cannot_add_company_holiday(self):
+        self.client.force_login(self.employee)
+
+        response = self.client.post(reverse('admin_leave_calendar'), {
+            'start_date': '2026-12-25',
+            'end_date': '2026-12-25',
+            'name': 'Christmas Day',
+        })
+
+        self.assertRedirects(response, reverse('employee_dashboard'))
+        self.assertFalse(CompanyHoliday.objects.filter(name='Christmas Day').exists())
 
 
 class DepartmentAndPayrollManagementTests(TestCase):
@@ -305,6 +376,49 @@ class DepartmentAndPayrollManagementTests(TestCase):
         page = self.client.get(reverse('organization_management'))
         self.assertContains(page, 'Software Engineer')
         self.assertContains(page, 'Platform')
+
+    def test_department_head_must_be_assigned_to_the_same_department(self):
+        other_department = Department.objects.create(name='Operations')
+        self.employee.department_record = other_department
+        self.employee.department = other_department.name
+        self.employee.save(update_fields=['department_record', 'department'])
+
+        response = self.client.post(reverse('organization_management'), {
+            'action': 'department',
+            'name': 'Engineering',
+            'description': '',
+            'head': str(self.employee.pk),
+            'parent_department': '',
+            'is_active': 'on',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context['department_form'].errors['head'])
+        self.assertFalse(Department.objects.filter(name='Engineering').exists())
+
+    def test_department_hierarchy_rejects_cycles(self):
+        parent = Department.objects.create(name='Engineering')
+        child = Department.objects.create(
+            name='Platform',
+            parent_department=parent,
+        )
+
+        response = self.client.post(reverse('organization_management'), {
+            'action': 'department',
+            'department_id': str(parent.pk),
+            'name': parent.name,
+            'description': '',
+            'head': '',
+            'parent_department': str(child.pk),
+            'is_active': 'on',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(
+            response.context['department_form'].errors['parent_department']
+        )
+        parent.refresh_from_db()
+        self.assertIsNone(parent.parent_department_id)
 
     def test_employee_cannot_access_admin_department_or_payroll_views(self):
         self.client.force_login(self.employee)
@@ -425,6 +539,142 @@ class DepartmentAndPayrollManagementTests(TestCase):
         self.assertEqual(structure.revisions.count(), 1)
         self.assertEqual(structure.revisions.get().reason, 'Initial offer')
         self.assertEqual(self.employee.salary_amount, Decimal('6550.00'))
+
+    def test_payroll_applies_each_salary_revision_for_its_effective_part_of_month(self):
+        month, year = 9, 2026
+        month_start = datetime.date(year, month, 1)
+        structure = SalaryStructure.objects.create(
+            employee=self.employee,
+            basic_salary='1000.00',
+            hra='200.00',
+            allowances='100.00',
+            deductions='50.00',
+            effective_from=month_start,
+        )
+        SalaryRevision.objects.create(
+            structure=structure,
+            basic_salary='1000.00',
+            hra='200.00',
+            allowances='100.00',
+            deductions='50.00',
+            effective_from=month_start,
+            revised_by=self.admin,
+        )
+        SalaryRevision.objects.create(
+            structure=structure,
+            basic_salary='2000.00',
+            hra='400.00',
+            allowances='200.00',
+            deductions='100.00',
+            effective_from=datetime.date(year, month, 16),
+            revised_by=self.admin,
+        )
+
+        response = self.client.post(reverse('payroll_management'), {
+            'action': 'process',
+            'month': str(month),
+            'year': str(year),
+        })
+
+        self.assertRedirects(
+            response,
+            f'{reverse("payroll_management")}?month={month}&year={year}',
+        )
+        salary = Salary.objects.get(employee=self.employee, month=month, year=year)
+        self.assertEqual(salary.amount, Decimal('1875.00'))
+        self.assertEqual(
+            salary.components.get(name='Basic Salary').amount,
+            Decimal('1500.00'),
+        )
+        self.assertEqual(
+            salary.components.get(name='HRA').amount,
+            Decimal('300.00'),
+        )
+        self.assertEqual(
+            salary.components.get(name='Allowances').amount,
+            Decimal('150.00'),
+        )
+        self.assertEqual(
+            salary.components.get(name='Other Deductions').amount,
+            Decimal('75.00'),
+        )
+
+    def test_salary_structure_employee_cannot_be_changed_during_revision(self):
+        structure = SalaryStructure.objects.create(
+            employee=self.employee,
+            basic_salary='5000.00',
+            effective_from=timezone.localdate(),
+        )
+        other_employee = User.objects.create_user(
+            username='other-payroll-employee',
+            role='employee',
+        )
+
+        response = self.client.post(
+            reverse('salary_structure_edit', args=[structure.pk]),
+            {
+                'employee': str(other_employee.pk),
+                'basic_salary': '5500.00',
+                'hra': '0.00',
+                'allowances': '0.00',
+                'deductions': '0.00',
+                'attendance_based': 'on',
+                'effective_from': timezone.localdate().isoformat(),
+                'is_active': 'on',
+                'reason': 'Annual review',
+            },
+        )
+
+        self.assertRedirects(response, reverse('payroll_management'))
+        structure.refresh_from_db()
+        self.assertEqual(structure.employee, self.employee)
+        self.assertEqual(structure.basic_salary, Decimal('5500.00'))
+
+    def test_payroll_and_salary_structure_lists_are_paginated(self):
+        month, year = 9, 2026
+        for index in range(51):
+            employee = User.objects.create_user(
+                username=f'paginated-payroll-{index:02d}',
+                role='employee',
+            )
+            SalaryStructure.objects.create(
+                employee=employee,
+                basic_salary='1000.00',
+                effective_from=datetime.date(year, month, 1),
+            )
+            Salary.objects.create(
+                employee=employee,
+                month=month,
+                year=year,
+                amount='1000.00',
+            )
+            if index == 0:
+                Salary.objects.create(
+                    employee=employee,
+                    month=12,
+                    year=timezone.localdate().year - 5,
+                    amount='1000.00',
+                )
+
+        first_page = self.client.get(
+            reverse('payroll_management'),
+            {'month': month, 'year': year},
+        )
+        self.assertEqual(first_page.status_code, 200)
+        self.assertEqual(len(first_page.context['rows']), 50)
+        self.assertEqual(first_page.context['payroll_page'].paginator.count, 51)
+        self.assertEqual(len(first_page.context['structures']), 50)
+        self.assertEqual(first_page.context['structure_page'].paginator.count, 51)
+        self.assertIn(timezone.localdate().year - 5, first_page.context['years'])
+        self.assertNotIn(timezone.localdate().year + 1, first_page.context['years'])
+        self.assertContains(first_page, 'Page 1 of 2')
+
+        second_page = self.client.get(
+            reverse('payroll_management'),
+            {'month': month, 'year': year, 'payroll_page': 2, 'structure_page': 2},
+        )
+        self.assertEqual(len(second_page.context['rows']), 1)
+        self.assertEqual(len(second_page.context['structures']), 1)
 
 
 class EmployeeManagementTests(TestCase):

@@ -28,7 +28,13 @@ from .views import (
 
 urlpatterns = [
     path('', RootRedirectView.as_view(), name='root_redirect'),
-    path('login/', AdminLoginView.as_view(), {'expected_role': 'employee'}, name='login'),
+
+    # Unified login page for both admin and employee. Keep named aliases for
+    # compatibility with existing code/tests while using the same view/URL.
+    path('login/', AdminLoginView.as_view(), name='login'),
+    path('hr/login/', AdminLoginView.as_view(), name='admin_login'),
+    path('employee/login/', AdminLoginView.as_view(), name='employee_login'),
+
     path('hr/dashboard/', AdminDashboardView.as_view(), name='admin_dashboard'),
     path('hr/organization/', DepartmentManagementView.as_view(), name='organization_management'),
     path('hr/payroll/', PayrollManagementView.as_view(), name='payroll_management'),
@@ -51,8 +57,8 @@ urlpatterns = [
     path('hr/attendance/', AttendanceManagementView.as_view(), name='attendance_management'),
     path('hr/attendance/export/', AttendanceReportExportView.as_view(), name='attendance_report_export'),
     path('hr/leaves/<int:pk>/document/', AdminLeaveDocumentView.as_view(), name='admin_leave_document'),
-    path('hr/login/', AdminLoginView.as_view(), name='admin_login'),
-    path('employee/login/', AdminLoginView.as_view(), {'expected_role': 'employee'}, name='employee_login'),
-    path('hr/logout/', AdminLogoutView.as_view(), {'portal': 'admin'}, name='admin_logout'),
-    path('employee/logout/', AdminLogoutView.as_view(), {'portal': 'employee'}, name='employee_logout'),
+
+    # Unified logout that returns to the single login page
+    path('hr/logout/', AdminLogoutView.as_view(), name='admin_logout'),
+    path('employee/logout/', AdminLogoutView.as_view(), name='employee_logout'),
 ]
